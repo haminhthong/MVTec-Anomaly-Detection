@@ -1,10 +1,8 @@
-"""Module thực hiện đánh giá toàn diện mô hình trên tập test MVTec AD.
+"""Report-only evaluation on the MVTec AD test split.
 
-Đảm bảo:
-1. P0 Fix: Đồng bộ 100% giữa Artifact Config và Dataset Category (không hardcode).
-2. Quy tắc Report-Only: Tuyệt đối không chọn lại ngưỡng trên tập test; sử dụng nguyên
-   vẹn threshold đã căn chỉnh từ held-out normal.
-3. Xuất kết quả 3 tầng metrics ra console và lưu vào reports/test_metrics.json.
+Evaluation never recalibrates thresholds. The detector is loaded from a frozen
+artifact and the test split is used only to produce detection, localization and
+operational QC metrics.
 """
 
 from __future__ import annotations
@@ -24,130 +22,102 @@ from .metrics import calculate_3tier_metrics
 def evaluate_category(
     category: str | None = None,
     model_dir: str | Path = "models",
-    output_report: str | Path = "reports/test_metrics.json",
+    data_root: str | Path = "data/raw",
+    output_report: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Đánh giá mô hình PatchCore trên toàn bộ tập test của danh mục tương ứng.
-
-    Args:
-        category: Tên danh mục (nếu None sẽ đọc từ config của detector).
-        model_dir: Đường dẫn thư mục chứa model artifacts.
-        output_report: Đường dẫn lưu trữ báo cáo JSON.
-
-    Returns:
-        dict[str, Any]: Báo cáo metrics 3 tầng.
-    """
-    # Khởi tạo detector trước để đọc chính xác category từ model artifact (Fix P0)
     det = AnomalyDetector(model_dir=model_dir, category=category)
     resolved_category = det.category
-    root = find_category_root(category=resolved_category)
+    root = find_category_root(raw=data_root, category=resolved_category)
+    evaluation_size = tuple(det.preprocessing_config.image_size)
 
-    ys: list[int] = []
+    y_true: list[int] = []
     scores: list[float] = []
     masks: list[np.ndarray] = []
-    maps: list[np.ndarray] = []
-
-    print(
-        f"\n[EVALUATION] Bắt đầu đánh giá mô hình PatchCore cho danh mục '{resolved_category}'..."
-    )
-    print(f"  - Artifact version: {det.model_version}")
-    print(f"  - Calibrated Image Threshold: {det.threshold:.4f}")
-    print(f"  - Calibrated Review Threshold: {det.review_threshold:.4f}")
-    print(f"  - Calibrated Pixel Threshold: {det.pixel_threshold:.4f}")
+    anomaly_maps: list[np.ndarray] = []
 
     test_dir = root / "test"
+    if not test_dir.exists():
+        raise FileNotFoundError(f"MVTec test directory not found: '{test_dir}'.")
+
+    print(f"[EVALUATION] category={resolved_category} artifact={det.artifact_dir}")
+    print("[POLICY] test split is report-only; calibrated thresholds remain frozen")
+
     for defect_dir in sorted(test_dir.iterdir()):
         if not defect_dir.is_dir():
             continue
-
         is_defective = 0 if defect_dir.name == "good" else 1
 
-        for p in sorted(defect_dir.glob("*.png")):
-            with Image.open(p) as img:
-                s, heat = det.score(img)
+        for image_path in sorted(defect_dir.glob("*.png")):
+            with Image.open(image_path) as image:
+                score, heatmap = det.score(image)
 
-            ys.append(is_defective)
-            scores.append(s)
+            y_true.append(is_defective)
+            scores.append(score)
 
-            # Đọc ground-truth mask nếu là ảnh có lỗi
             if is_defective:
                 mask_path = (
-                    root / "ground_truth" / defect_dir.name / f"{p.stem}_mask.png"
+                    root / "ground_truth" / defect_dir.name / f"{image_path.stem}_mask.png"
                 )
-                if mask_path.exists():
-                    with Image.open(mask_path) as m_img:
-                        mask = (
-                            np.asarray(
-                                m_img.convert("L").resize(
-                                    (224, 224), Image.Resampling.NEAREST
-                                )
-                            )
-                            > 0
+                if not mask_path.exists():
+                    raise FileNotFoundError(
+                        f"Missing ground-truth mask for defect image '{image_path}': '{mask_path}'."
+                    )
+                with Image.open(mask_path) as mask_image:
+                    mask = np.asarray(
+                        mask_image.convert("L").resize(
+                            (evaluation_size[1], evaluation_size[0]),
+                            Image.Resampling.NEAREST,
                         )
-                else:
-                    mask = np.zeros((224, 224), dtype=bool)
+                    ) > 0
             else:
-                mask = np.zeros((224, 224), dtype=bool)
+                mask = np.zeros(evaluation_size, dtype=bool)
 
-            # Resize anomaly map về 224x224
-            anomaly_map = np.asarray(
-                Image.fromarray(heat.astype(np.float32)).resize(
-                    (224, 224), Image.Resampling.BILINEAR
+            resized_map = np.asarray(
+                Image.fromarray(heatmap.astype(np.float32)).resize(
+                    (evaluation_size[1], evaluation_size[0]),
+                    Image.Resampling.BILINEAR,
                 )
             )
-
             masks.append(mask)
-            maps.append(anomaly_map)
+            anomaly_maps.append(resized_map)
 
-    masks_array = np.asarray(masks)
-    maps_array = np.asarray(maps)
+    if not y_true:
+        raise RuntimeError(f"No test PNG images found under '{test_dir}'.")
 
-    # Tính toán 3 tầng chỉ số
     metrics_result = calculate_3tier_metrics(
-        y_true=ys,
+        y_true=y_true,
         scores=scores,
-        masks=masks_array,
-        maps=maps_array,
+        masks=np.asarray(masks),
+        maps=np.asarray(anomaly_maps),
         threshold=det.threshold,
     )
+    metrics_result.update(
+        {
+            "category": resolved_category,
+            "model_version": det.model_version,
+            "artifact_dir": str(det.artifact_dir),
+            "evaluation_image_size": list(evaluation_size),
+            "evaluation_policy": "report-only; no threshold tuning on test",
+            "num_test_images": len(y_true),
+        }
+    )
 
-    metrics_result["category"] = resolved_category
-    metrics_result["model_version"] = det.model_version
-
-    # Lưu báo cáo JSON
-    rep_path = Path(output_report)
-    rep_path.parent.mkdir(parents=True, exist_ok=True)
-    rep_path.write_text(
+    report_path = (
+        Path(output_report)
+        if output_report is not None
+        else Path("reports") / resolved_category / "test_metrics.json"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
         json.dumps(metrics_result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    op = metrics_result["operational_decision"]
-    det_tier = metrics_result["detection"]
-    loc_tier = metrics_result["localization"]
-    cm = op["confusion_matrix"]
-
-    print("\n" + "=" * 65)
-    print(f"      KẾT QUẢ ĐÁNH GIÁ 3 TẦNG: {resolved_category.upper()}")
-    print("=" * 65)
-    print(" [TIER 1: DETECTION (Định danh lỗi toàn ảnh)]")
-    print(f"  - Image AUROC                : {det_tier['image_auroc']:.4f}")
-    print(f"  - Image Average Precision    : {det_tier['image_average_precision']:.4f}")
-    print("\n [TIER 2: LOCALIZATION (Khoanh vùng khuyết tật pixel)]")
-    print(f"  - Pixel AUROC                : {loc_tier['pixel_auroc']:.4f}")
-    print(f"  - Pixel Average Precision    : {loc_tier['pixel_average_precision']:.4f}")
-    print(f"  - AUPRO (max_fpr=0.3)        : {loc_tier['aupro_0.3']:.4f}")
-    print("\n [TIER 3: OPERATIONAL QC (Quyết định vận hành tại ngưỡng Calibrated)]")
-    print(f"  - Calibrated Threshold       : {op['threshold']:.4f}")
-    print(f"  - Accuracy                   : {op['accuracy']:.4f}")
-    print(f"  - Precision                  : {op['precision']:.4f}")
-    print(f"  - Defect Recall (TPR)        : {op['defect_recall']:.4f} (Độ nhạy bắt lỗi)")
-    print(f"  - Specificity (TNR)          : {op['specificity']:.4f} (Độ đặc hiệu)")
-    print(f"  - F1 Score                   : {op['f1_score']:.4f}")
-    print(f"  - False Reject Rate (FRR)    : {op['false_reject_rate']:.4f} (Tỷ lệ loại nhầm hàng tốt)")
-    print(f"  - False Accept Rate (FAR)    : {op['false_accept_rate']:.4f} (Tỷ lệ lọt sản phẩm lỗi)")
-    print("\n [CONFUSION MATRIX]")
-    print(f"                 Pred PASS    Pred FAIL")
-    print(f"  Normal (Good):   TN={cm['tn']:<4}      FP={cm['fp']:<4}  (Total: {cm['tn']+cm['fp']})")
-    print(f"  Defect:          FN={cm['fn']:<4}      TP={cm['tp']:<4}  (Total: {cm['tp']+cm['fn']})")
-    print("=" * 65 + "\n")
-
+    detection = metrics_result["detection"]
+    localization = metrics_result["localization"]
+    operational = metrics_result["operational_decision"]
+    print(f"[RESULT] image_auroc={detection['image_auroc']:.4f}")
+    print(f"[RESULT] pixel_auroc={localization['pixel_auroc']:.4f}")
+    print(f"[RESULT] aupro_0.3={localization['aupro_0.3']:.4f}")
+    print(f"[RESULT] defect_recall={operational['defect_recall']:.4f}")
+    print(f"[REPORT] {report_path}")
     return metrics_result
