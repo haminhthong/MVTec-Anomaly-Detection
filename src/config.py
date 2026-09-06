@@ -58,6 +58,8 @@ class TrainConfig:
     min_coreset_size: int = 100
     max_coreset_size: int = 1000
     smooth_sigma: float = 1.0
+    weights: str | None = None
+    scoring_percentile: float = 99.0
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
 
     def validate(self) -> None:
@@ -94,6 +96,8 @@ class TrainConfig:
             )
         if self.smooth_sigma < 0:
             raise ValueError("smooth_sigma không được âm.")
+        if not 50.0 <= self.scoring_percentile <= 100.0:
+            raise ValueError("scoring_percentile phải thuộc khoảng [50.0, 100.0].")
 
 
 def parse_args() -> TrainConfig:
@@ -115,6 +119,30 @@ def parse_args() -> TrainConfig:
         type=str,
         default=DEFAULT_BACKBONE,
         help="Kiến trúc mạng backbone (mặc định: resnet18)",
+    )
+    parser.add_argument(
+        "--weights",
+        type=str,
+        default=None,
+        help="Torchvision weights enum identifier (e.g. ResNet18_Weights.IMAGENET1K_V1)",
+    )
+    parser.add_argument(
+        "--feature-layers",
+        nargs="+",
+        default=list(DEFAULT_FEATURE_LAYERS),
+        help="Danh sách các layer trích xuất đặc trưng",
+    )
+    parser.add_argument(
+        "--pretrained",
+        action="store_true",
+        default=True,
+        help="Sử dụng pretrained weights ImageNet",
+    )
+    parser.add_argument(
+        "--no-pretrained",
+        action="store_false",
+        dest="pretrained",
+        help="Không sử dụng pretrained weights (weights ngẫu nhiên)",
     )
     parser.add_argument(
         "--batch-size", type=int, default=8, help="Kích thước batch cho DataLoader"
@@ -156,10 +184,28 @@ def parse_args() -> TrainConfig:
         help="Tỷ lệ mẫu patch giữ lại qua coreset",
     )
     parser.add_argument(
+        "--min-coreset-size",
+        type=int,
+        default=100,
+        help="Kích thước tối thiểu của coreset memory bank",
+    )
+    parser.add_argument(
+        "--max-coreset-size",
+        type=int,
+        default=1000,
+        help="Kích thước tối đa của coreset memory bank",
+    )
+    parser.add_argument(
         "--smooth-sigma",
         type=float,
         default=1.0,
         help="Độ mịn Gaussian smoothing cho anomaly map",
+    )
+    parser.add_argument(
+        "--scoring-percentile",
+        type=float,
+        default=99.0,
+        help="Phân vị tính anomaly score từ anomaly heatmap (mặc định: 99.0)",
     )
 
     args = parser.parse_args()
@@ -167,6 +213,9 @@ def parse_args() -> TrainConfig:
         category=args.category,
         seed=args.seed,
         backbone=args.backbone,
+        weights=args.weights,
+        feature_layers=tuple(args.feature_layers),
+        pretrained=args.pretrained,
         batch_size=args.batch_size,
         calibration_fraction=args.calibration_fraction,
         review_quantile=args.review_quantile,
@@ -174,7 +223,10 @@ def parse_args() -> TrainConfig:
         pixel_quantile=args.pixel_quantile,
         min_calibration_samples=args.min_calibration_samples,
         coreset_fraction=args.coreset_fraction,
+        min_coreset_size=args.min_coreset_size,
+        max_coreset_size=args.max_coreset_size,
         smooth_sigma=args.smooth_sigma,
+        scoring_percentile=args.scoring_percentile,
     )
     config.validate()
     return config

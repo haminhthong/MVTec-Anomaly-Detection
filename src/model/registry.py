@@ -12,12 +12,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .artifact_resolver import ModelNotFoundError, resolve_artifact_dir
+
 if TYPE_CHECKING:
     from ..inference.detector import AnomalyDetector
-
-
-class ModelNotFoundError(FileNotFoundError):
-    """Raised when artifacts for a requested category cannot be found."""
 
 
 class ModelRegistry:
@@ -64,32 +62,7 @@ class ModelRegistry:
         Raises:
             ModelNotFoundError: If the category directory or required artifacts do not exist.
         """
-        if not category or not category.strip():
-            raise ValueError("Category name must not be empty.")
-
-        category = category.strip()
-        cat_dir = self.base_dir / category
-
-        if not cat_dir.exists() or not cat_dir.is_dir():
-            raise ModelNotFoundError(
-                f"Model artifacts for category '{category}' do not exist at '{cat_dir}'. "
-                f"Available categories: {self.list_categories()}."
-            )
-
-        config_path = cat_dir / "config.json"
-        if not config_path.exists():
-            raise ModelNotFoundError(
-                f"Missing 'config.json' for category '{category}' at '{cat_dir}'."
-            )
-
-        memory_path = cat_dir / "memory_bank.npy"
-        legacy_memory_path = cat_dir / "memory.npy"
-        if not memory_path.exists() and not legacy_memory_path.exists():
-            raise ModelNotFoundError(
-                f"Missing 'memory_bank.npy' for category '{category}' at '{cat_dir}'."
-            )
-
-        return cat_dir
+        return resolve_artifact_dir(model_root=self.base_dir, category=category)
 
     def get_metadata(self, category: str) -> dict[str, Any]:
         """Read config.json metadata for a specific category.

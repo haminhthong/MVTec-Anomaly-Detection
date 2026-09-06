@@ -20,8 +20,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config import TrainConfig
-from src.evaluation.evaluator import evaluate_category
-from src.training.trainer import train_patchcore
+from src.pipeline import run_end_to_end_pipeline
 
 ALL_MVTEC_CATEGORIES = [
     "bottle",
@@ -62,19 +61,13 @@ def run_pipeline_for_category(
     models_dir: str | Path = "models",
     backbone: str = "resnet18",
 ) -> dict[str, Any]:
-    """Execute training and evaluation for a single category."""
-    print(f"\n{'='*70}\n PROCESSING CATEGORY: {category.upper()}\n{'='*70}")
-
-    # 1. Train
-    cfg = TrainConfig(category=category, backbone=backbone)
-    _ = train_patchcore(config=cfg, models_dir=models_dir, data_dir=data_dir)
-
-    # 2. Evaluate
+    """Execute unified lifecycle (data -> train -> evaluate) for a single category."""
     report_file = Path("reports") / category / "test_metrics.json"
-    metrics = evaluate_category(
+    metrics = run_end_to_end_pipeline(
         category=category,
-        model_dir=models_dir,
+        backbone=backbone,
         data_dir=data_dir,
+        models_dir=models_dir,
         output_report=report_file,
     )
     return metrics
@@ -101,10 +94,15 @@ def aggregate_benchmark_csv(
             "pixel_ap": round(loc["pixel_average_precision"], 4),
             "aupro_0.3": round(loc["aupro_0.3"], 4),
             "threshold": round(op["threshold"], 4),
+            "review_threshold": round(op.get("review_threshold", 0.0), 4),
             "accuracy": round(op["accuracy"], 4),
             "defect_recall": round(op["defect_recall"], 4),
             "specificity": round(op["specificity"], 4),
             "f1_score": round(op["f1_score"], 4),
+            "auto_pass_rate": round(op.get("auto_pass_rate", 0.0), 4),
+            "manual_review_rate": round(op.get("manual_review_rate", 0.0), 4),
+            "auto_fail_rate": round(op.get("auto_fail_rate", 0.0), 4),
+            "defect_escape_rate": round(op.get("defect_escape_after_auto_pass", 0.0), 4),
             "status": "evaluated",
         })
 
@@ -129,10 +127,15 @@ def aggregate_benchmark_csv(
         "pixel_ap": round(avg_pix_ap, 4),
         "aupro_0.3": round(avg_aupro, 4),
         "threshold": "-",
+        "review_threshold": "-",
         "accuracy": round(sum(r["accuracy"] for r in rows) / len(rows), 4),
         "defect_recall": round(sum(r["defect_recall"] for r in rows) / len(rows), 4),
         "specificity": round(sum(r["specificity"] for r in rows) / len(rows), 4),
         "f1_score": round(avg_f1, 4),
+        "auto_pass_rate": round(sum(r["auto_pass_rate"] for r in rows) / len(rows), 4),
+        "manual_review_rate": round(sum(r["manual_review_rate"] for r in rows) / len(rows), 4),
+        "auto_fail_rate": round(sum(r["auto_fail_rate"] for r in rows) / len(rows), 4),
+        "defect_escape_rate": round(sum(r["defect_escape_rate"] for r in rows) / len(rows), 4),
         "status": "macro_average",
     }
     rows.append(mean_row)

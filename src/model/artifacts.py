@@ -32,6 +32,9 @@ class ThresholdPolicy:
     def to_dict(self) -> dict[str, float]:
         """Convert threshold policy to dictionary representation."""
         return {
+            "review": float(self.review_threshold),
+            "fail": float(self.fail_threshold),
+            "pixel": float(self.pixel_threshold),
             "review_threshold": float(self.review_threshold),
             "fail_threshold": float(self.fail_threshold),
             "pixel_threshold": float(self.pixel_threshold),
@@ -42,9 +45,9 @@ class ThresholdPolicy:
         """Instantiate ThresholdPolicy from a dictionary."""
         # Support both nested under 'thresholds' or flat dictionary
         th_dict = data.get("thresholds", data)
-        review = th_dict.get("review_threshold")
-        fail = th_dict.get("fail_threshold", th_dict.get("threshold"))
-        pixel = th_dict.get("pixel_threshold", fail)
+        review = th_dict.get("review_threshold", th_dict.get("review"))
+        fail = th_dict.get("fail_threshold", th_dict.get("fail", th_dict.get("threshold")))
+        pixel = th_dict.get("pixel_threshold", th_dict.get("pixel", fail))
 
         if fail is None:
             raise ValueError(f"Missing required fail/image threshold in data: {data}")
@@ -107,15 +110,18 @@ class ModelMetadata:
     """Structured version and provenance metadata for model artifact."""
 
     model_version: str = "1.0.0"
-    pipeline_version: str = "1"
+    pipeline_version: str = "1.0"
     artifact_schema_version: int = 4
     category: str = "bottle"
     backbone: str = "resnet18"
+    weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
+    pretrained: bool = True
     feature_layers: list[str] = field(default_factory=lambda: ["layer2", "layer3"])
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     device_used: str = "cpu"
+    dataset_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert metadata to dictionary."""
@@ -123,16 +129,22 @@ class ModelMetadata:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelMetadata:
-        """Instantiate ModelMetadata from dictionary."""
+        """Instantiate ModelMetadata from dictionary supporting flat or nested layouts."""
+        sub = data.get("model", data)
         return cls(
-            model_version=str(data.get("model_version", data.get("version", "1.0.0"))),
-            pipeline_version=str(data.get("pipeline_version", "1")),
-            artifact_schema_version=int(data.get("artifact_schema_version", data.get("schema_version", 4))),
-            category=str(data.get("category", "bottle")),
-            backbone=str(data.get("backbone", "resnet18")),
-            feature_layers=list(data.get("feature_layers", ["layer2", "layer3"])),
-            created_at=str(data.get("created_at", "")),
-            device_used=str(data.get("device_used", "cpu")),
+            model_version=str(sub.get("model_version", sub.get("version", data.get("version", "1.0.0")))),
+            pipeline_version=str(sub.get("pipeline_version", data.get("pipeline_version", "1.0"))),
+            artifact_schema_version=int(
+                sub.get("artifact_schema_version", sub.get("schema_version", data.get("schema_version", 4)))
+            ),
+            category=str(sub.get("category", data.get("category", "bottle"))),
+            backbone=str(sub.get("backbone", data.get("backbone", "resnet18"))),
+            weights=sub.get("weights", data.get("weights")),
+            pretrained=bool(sub.get("pretrained", data.get("pretrained", True))),
+            feature_layers=list(sub.get("feature_layers", data.get("feature_layers", ["layer2", "layer3"]))),
+            created_at=str(sub.get("created_at", data.get("created_at", ""))),
+            device_used=str(sub.get("device_used", data.get("device_used", "cpu"))),
+            dataset_fingerprint=sub.get("dataset_fingerprint", data.get("dataset_fingerprint")),
         )
 
 
@@ -144,28 +156,48 @@ class ModelArtifact:
     threshold_policy: ThresholdPolicy
     preprocessing: PreprocessingConfig
     coreset_info: dict[str, Any]
+    scoring: dict[str, Any] = field(
+        default_factory=lambda: {
+            "method": "percentile",
+            "percentile": 99.0,
+            "smooth_sigma": 1.0,
+        }
+    )
+    calibration: dict[str, Any] = field(default_factory=dict)
     smooth_sigma: float = 1.0
+    dataset_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Assemble full config.json payload."""
-        payload = self.metadata.to_dict()
-        payload.update({
-            "thresholds": self.threshold_policy.to_dict(),
+        payload = {
+            "model": self.metadata.to_dict(),
             "preprocessing": self.preprocessing.to_dict(),
+            "scoring": self.scoring,
             "coreset": self.coreset_info,
-            "smooth_sigma": self.smooth_sigma,
-            # Backward-compatible convenience fields:
+            "calibration": self.calibration,
+            "thresholds": self.threshold_policy.to_dict(),
+            "dataset_fingerprint": self.dataset_fingerprint or self.metadata.dataset_fingerprint,
+            # Backward-compatible convenience flat fields:
+            "category": self.metadata.category,
+            "version": self.metadata.model_version,
+            "model_version": self.metadata.model_version,
+            "pipeline_version": self.metadata.pipeline_version,
+            "artifact_schema_version": self.metadata.artifact_schema_version,
+            "schema_version": self.metadata.artifact_schema_version,
+            "backbone": self.metadata.backbone,
+            "pretrained": self.metadata.pretrained,
+            "weights": self.metadata.weights,
+            "feature_layers": self.metadata.feature_layers,
             "threshold": self.threshold_policy.fail_threshold,
             "review_threshold": self.threshold_policy.review_threshold,
             "pixel_threshold": self.threshold_policy.pixel_threshold,
-            "version": self.metadata.model_version,
-            "schema_version": self.metadata.artifact_schema_version,
-        })
+            "smooth_sigma": self.smooth_sigma,
+        }
         return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelArtifact:
-        """Parse ModelArtifact from JSON dictionary."""
+        """Parse ModelArtifact from JSON dictionary supporting nested or flat format."""
         metadata = ModelMetadata.from_dict(data)
         threshold_policy = ThresholdPolicy.from_dict(data)
         prep_data = data.get("preprocessing", {})
@@ -175,14 +207,36 @@ class ModelArtifact:
             else PreprocessingConfig()
         )
         coreset_info = dict(data.get("coreset", {}))
-        smooth_sigma = float(data.get("smooth_sigma", 1.0))
+
+        scoring_data = data.get("scoring", {})
+        smooth_sigma = float(
+            scoring_data.get(
+                "smooth_sigma", data.get("smooth_sigma", 1.0)
+            )
+        )
+        percentile = float(
+            scoring_data.get(
+                "percentile", data.get("scoring_percentile", 99.0)
+            )
+        )
+        scoring = {
+            "method": scoring_data.get("method", "percentile"),
+            "percentile": percentile,
+            "smooth_sigma": smooth_sigma,
+        }
+
+        calibration = dict(data.get("calibration", {}))
+        dataset_fingerprint = data.get("dataset_fingerprint", metadata.dataset_fingerprint)
 
         return cls(
             metadata=metadata,
             threshold_policy=threshold_policy,
             preprocessing=preprocessing,
             coreset_info=coreset_info,
+            scoring=scoring,
+            calibration=calibration,
             smooth_sigma=smooth_sigma,
+            dataset_fingerprint=dataset_fingerprint,
         )
 
     def save(self, category_dir: str | Path) -> None:

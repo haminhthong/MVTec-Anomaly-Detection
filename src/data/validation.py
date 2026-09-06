@@ -17,68 +17,11 @@ from typing import Sequence
 
 from PIL import Image, UnidentifiedImageError
 
-SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
+from .manifest import DatasetManifest, SUPPORTED_EXTENSIONS
 
 
 class DatasetValidationError(Exception):
     """Raised when MVTec AD dataset fails structural or integrity validation."""
-
-
-@dataclass
-class DatasetManifest:
-    """Canonical representation of an MVTec AD category dataset.
-
-    Serves as the single source of truth for all downstream pipelines.
-    """
-
-    category: str
-    root_path: Path
-    train_good: list[Path] = field(default_factory=list)
-    test_good: list[Path] = field(default_factory=list)
-    test_defect: dict[str, list[Path]] = field(default_factory=dict)
-    masks: dict[str, Path] = field(default_factory=dict)
-
-    @property
-    def total_train(self) -> int:
-        """Total normal images for training."""
-        return len(self.train_good)
-
-    @property
-    def total_test_good(self) -> int:
-        """Total normal images in test set."""
-        return len(self.test_good)
-
-    @property
-    def total_test_defect(self) -> int:
-        """Total defective images across all defect types."""
-        return sum(len(paths) for paths in self.test_defect.values())
-
-    @property
-    def total_test(self) -> int:
-        """Total images in test set."""
-        return self.total_test_good + self.total_test_defect
-
-    @property
-    def defect_types(self) -> list[str]:
-        """List of defect types for this category."""
-        return sorted(self.test_defect.keys())
-
-    def get_all_test_paths(self) -> list[tuple[Path, int, Path | None]]:
-        """Get flattened test items with label and ground truth mask.
-
-        Returns:
-            list[tuple[Path, int, Path | None]]:
-                (image_path, is_defective [0 or 1], mask_path_or_None)
-        """
-        items: list[tuple[Path, int, Path | None]] = []
-        for p in self.test_good:
-            items.append((p, 0, None))
-
-        for defect_type, paths in sorted(self.test_defect.items()):
-            for p in sorted(paths):
-                mask = self.masks.get(str(p))
-                items.append((p, 1, mask))
-        return items
 
 
 def validate_mvtec_category(

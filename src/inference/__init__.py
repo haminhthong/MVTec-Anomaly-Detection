@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .decision import classify_decision_and_severity
+from .decision import OperationalPolicy, classify_decision_and_severity
 from .detector import AnomalyDetector
 from .localization import (
     apply_heatmap_smoothing,
@@ -13,6 +13,7 @@ from .scoring import compute_image_score, compute_patch_distances
 
 __all__ = [
     "AnomalyDetector",
+    "OperationalPolicy",
     "apply_heatmap_smoothing",
     "compute_anomalous_area_ratio",
     "create_heatmap_overlay_b64",

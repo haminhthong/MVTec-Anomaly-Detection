@@ -39,6 +39,11 @@ class MemoryBank:
         """Số chiều của vector patch embedding."""
         return self.vectors.shape[1]
 
+    @property
+    def features(self) -> np.ndarray:
+        """Alias for vectors array."""
+        return self.vectors
+
     def kneighbors(self, query_patches: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Tìm khoảng cách tới vector láng giềng gần nhất trong memory bank.
 

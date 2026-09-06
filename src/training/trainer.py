@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader
 from ..config import TrainConfig
 from ..data.dataset import ImageFolderDataset
 from ..data.transforms import build_transform
+from ..data.manifest import DatasetManifest
 from ..data.validation import validate_mvtec_category
 from ..inference.localization import apply_heatmap_smoothing
 from ..model.artifacts import (
@@ -46,6 +47,7 @@ def set_seed(seed: int = 42) -> None:
 
 
 def train_patchcore(
+    manifest: DatasetManifest | TrainConfig | None = None,
     config: TrainConfig | None = None,
     models_dir: str | Path = "models",
     data_dir: str | Path = "data/raw",
@@ -53,21 +55,31 @@ def train_patchcore(
     """Run complete offline model building pipeline for a category.
 
     Args:
+        manifest: Pre-validated DatasetManifest (or TrainConfig for backward compatibility).
         config: TrainConfig containing parameters. If None, default TrainConfig is used.
         models_dir: Base directory for storing category-scoped model artifacts.
-        data_dir: Base directory containing raw MVTec AD datasets.
+        data_dir: Base directory containing raw MVTec AD datasets (used if manifest is None).
 
     Returns:
         ModelArtifact: Saved model artifact container.
     """
-    cfg = config or TrainConfig()
+    if isinstance(manifest, TrainConfig):
+        cfg = manifest
+        manifest_obj: DatasetManifest | None = None
+    else:
+        cfg = config or TrainConfig()
+        manifest_obj = manifest
+
     cfg.validate()
     set_seed(cfg.seed)
 
     # 1. DATA VALIDATION & SPLIT
-    manifest = validate_mvtec_category(data_dir=data_dir, category=cfg.category)
+    if manifest_obj is None:
+        manifest_obj = validate_mvtec_category(data_dir=data_dir, category=cfg.category)
+
+    # ANTI-LEAKAGE: strictly consume only manifest.train_good
     memory_paths, calibration_paths = split_normal_paths(
-        manifest.train_good,
+        manifest_obj.train_good,
         calibration_fraction=cfg.calibration_fraction,
         seed=cfg.seed,
         min_calibration_samples=cfg.min_calibration_samples,
@@ -96,6 +108,7 @@ def train_patchcore(
         backbone=cfg.backbone,
         layers=cfg.feature_layers,
         pretrained=cfg.pretrained,
+        weights=getattr(cfg, "weights", None),
     ).to(device)
 
     batches: list[np.ndarray] = []
@@ -152,15 +165,19 @@ def train_patchcore(
     split_manifest.save(category_dir / "split_manifest.json")
 
     # Assemble metadata and save ModelArtifact
+    weights_name = getattr(network, "weights_name", None) or getattr(cfg, "weights", None)
     metadata = ModelMetadata(
         model_version="1.0.0",
-        pipeline_version="1",
+        pipeline_version="1.0",
         artifact_schema_version=4,
         category=cfg.category,
         backbone=cfg.backbone,
+        weights=weights_name,
+        pretrained=cfg.pretrained,
         feature_layers=list(cfg.feature_layers),
         created_at=datetime.now(timezone.utc).isoformat(),
         device_used=device,
+        dataset_fingerprint=manifest_obj.fingerprint,
     )
 
     artifact = ModelArtifact(
@@ -169,11 +186,26 @@ def train_patchcore(
         preprocessing=cfg.preprocessing,
         coreset_info={
             "fraction": cfg.coreset_fraction,
+            "projection_dim": 64,
+            "algorithm": "greedy_k_center",
             "size": len(compact_memory),
             "full_memory_patches": len(full_memory),
             "feature_dim": compact_memory.shape[1],
         },
+        scoring={
+            "method": "percentile",
+            "percentile": getattr(cfg, "scoring_percentile", 99.0),
+            "smooth_sigma": cfg.smooth_sigma,
+        },
+        calibration={
+            "source": "held_out_train_good",
+            "review_quantile": cfg.review_quantile,
+            "fail_quantile": cfg.threshold_quantile,
+            "pixel_quantile": cfg.pixel_quantile,
+            "samples": len(calibration_paths),
+        },
         smooth_sigma=cfg.smooth_sigma,
+        dataset_fingerprint=manifest_obj.fingerprint,
     )
     artifact.save(category_dir)
 

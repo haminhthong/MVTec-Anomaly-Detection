@@ -20,10 +20,11 @@ from PIL import Image
 import torch
 
 from ..data.transforms import PreprocessingConfig, build_transform
+from ..model.artifact_resolver import resolve_artifact_dir
 from ..model.artifacts import ModelArtifact, ThresholdPolicy
 from ..model.feature_extractor import FeatureExtractor
 from ..model.memory_bank import MemoryBank
-from .decision import classify_decision_and_severity
+from .decision import OperationalPolicy, classify_decision_and_severity
 from .localization import (
     apply_heatmap_smoothing,
     compute_anomalous_area_ratio,
@@ -40,6 +41,7 @@ class AnomalyDetector:
         model_dir: Path to directory containing category artifacts (models/<category>).
         artifact: Loaded ModelArtifact instance.
         threshold_policy: Calibrated ThresholdPolicy.
+        operational_policy: Operational QC inspection policy.
         preprocessing_config: Synchronized PreprocessingConfig.
         memory_bank: Fitted MemoryBank.
         net: Frozen FeatureExtractor backbone.
@@ -60,27 +62,18 @@ class AnomalyDetector:
             FileNotFoundError: If model artifacts are missing.
             ValueError: If threshold policy is invalid.
         """
-        base_path = Path(model_dir)
-
-        # Resolve category folder
-        if category and (base_path / category / "config.json").exists():
-            target_dir = base_path / category
-            self.category: str = category
-        elif (base_path / "config.json").exists():
-            target_dir = base_path
-            self.category = category or target_dir.name
-        else:
-            raise FileNotFoundError(
-                f"Cannot find valid model artifacts for category '{category}' at '{base_path}'."
-            )
-
+        target_dir = resolve_artifact_dir(model_root=model_dir, category=category)
         self.model_dir: Path = target_dir
+        self.category: str = target_dir.name
+
         config_file = target_dir / "config.json"
         raw_config: dict[str, Any] = json.loads(config_file.read_text(encoding="utf-8"))
 
-        self.category = raw_config.get("category", self.category)
         self.artifact: ModelArtifact = ModelArtifact.from_dict(raw_config)
         self.threshold_policy: ThresholdPolicy = self.artifact.threshold_policy
+        self.operational_policy: OperationalPolicy = (
+            OperationalPolicy.from_threshold_policy(self.threshold_policy)
+        )
 
         if self.threshold_policy.fail_threshold <= 0:
             raise ValueError(f"Invalid fail_threshold: {self.threshold_policy.fail_threshold}")
@@ -100,15 +93,17 @@ class AnomalyDetector:
         self.preprocessing_config: PreprocessingConfig = self.artifact.preprocessing
         self.transform = build_transform(self.preprocessing_config)
 
-        # Initialize FeatureExtractor
+        # Initialize FeatureExtractor with artifact's exact weights & pretrained state
         self.dev: str = "cuda" if torch.cuda.is_available() else "cpu"
         self.net: FeatureExtractor = FeatureExtractor(
             backbone=self.artifact.metadata.backbone,
             layers=self.artifact.metadata.feature_layers,
-            pretrained=True,
+            pretrained=self.artifact.metadata.pretrained,
+            weights=self.artifact.metadata.weights,
         ).to(self.dev)
 
         self.smooth_sigma: float = self.artifact.smooth_sigma
+        self.scoring_percentile: float = float(self.artifact.scoring.get("percentile", 99.0))
         self.model_version: str = self.artifact.metadata.model_version
 
     @property
@@ -141,7 +136,7 @@ class AnomalyDetector:
         distances, _ = self.memory_bank.kneighbors(patches.cpu().numpy())
         raw_heat = distances.reshape(h, w)
         smoothed_heat = apply_heatmap_smoothing(raw_heat, sigma=self.smooth_sigma)
-        image_score = compute_image_score(smoothed_heat, percentile=99.0)
+        image_score = compute_image_score(smoothed_heat, percentile=self.scoring_percentile)
         return image_score, smoothed_heat
 
     @torch.inference_mode()
@@ -166,6 +161,7 @@ class AnomalyDetector:
         decision, severity = classify_decision_and_severity(
             anomaly_score=score,
             threshold_policy=self.threshold_policy,
+            operational_policy=self.operational_policy,
             anomalous_area_ratio=area_ratio,
             peak_score=peak_score,
         )
@@ -249,13 +245,14 @@ class AnomalyDetector:
         for i in range(batch_size):
             raw_heat = reshaped_distances[i]
             smoothed_heat = apply_heatmap_smoothing(raw_heat, sigma=self.smooth_sigma)
-            score = compute_image_score(smoothed_heat, percentile=99.0)
+            score = compute_image_score(smoothed_heat, percentile=self.scoring_percentile)
             peak_score = float(np.max(smoothed_heat))
             area_ratio = compute_anomalous_area_ratio(smoothed_heat, self.pixel_threshold)
 
             decision, severity = classify_decision_and_severity(
                 anomaly_score=score,
                 threshold_policy=self.threshold_policy,
+                operational_policy=self.operational_policy,
                 anomalous_area_ratio=area_ratio,
                 peak_score=peak_score,
             )

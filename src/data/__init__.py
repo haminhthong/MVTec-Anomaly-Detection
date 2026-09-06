@@ -9,8 +9,8 @@ from .transforms import (
     PreprocessingConfig,
     build_transform,
 )
+from .manifest import DatasetManifest
 from .validation import (
-    DatasetManifest,
     DatasetValidationError,
     validate_mvtec_category,
 )

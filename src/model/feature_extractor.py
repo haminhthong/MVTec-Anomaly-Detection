@@ -16,32 +16,69 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 
+from .backbone_registry import BACKBONE_REGISTRY, get_backbone_spec
+
+
 class FeatureExtractor(nn.Module):
     """Configurable multi-layer patch feature extractor with frozen weights.
 
     Attributes:
         backbone_name: Name of the CNN backbone architecture.
         layers: Sequence of layer names to extract features from.
-        target_size: Optional spatial grid size (defaults to first layer's spatial grid).
+        pretrained: Whether ImageNet weights are loaded.
+        weights: Weights enum identifier or string.
     """
 
     def __init__(
         self,
         backbone: str = "resnet18",
-        layers: Sequence[str] = ("layer2", "layer3"),
+        layers: Sequence[str] | None = None,
         pretrained: bool = True,
+        weights: str | None = None,
     ) -> None:
         super().__init__()
         self.backbone_name: str = backbone
-        self.layers: tuple[str, ...] = tuple(layers)
         self.pretrained: bool = pretrained
+
+        # Resolve backbone spec if available
+        try:
+            spec = get_backbone_spec(backbone)
+            default_layers = spec.default_layers
+            default_weights = spec.weights
+        except ValueError:
+            spec = None
+            default_layers = ("layer2", "layer3")
+            default_weights = "DEFAULT"
+
+        self.layers: tuple[str, ...] = tuple(layers) if layers is not None else default_layers
 
         # Load backbone
         if not hasattr(models, backbone):
             raise ValueError(f"Backbone '{backbone}' is not supported by torchvision.models.")
 
-        weights = "DEFAULT" if pretrained else None
-        self.model: nn.Module = getattr(models, backbone)(weights=weights)
+        if not pretrained:
+            resolved_weights = None
+            self.weights_name: str | None = None
+        elif weights is not None:
+            self.weights_name = str(weights)
+            if "." in self.weights_name:
+                try:
+                    resolved_weights = models.get_weight(self.weights_name)
+                except Exception:
+                    resolved_weights = self.weights_name
+            else:
+                resolved_weights = self.weights_name
+        else:
+            self.weights_name = default_weights
+            if "." in self.weights_name:
+                try:
+                    resolved_weights = models.get_weight(self.weights_name)
+                except Exception:
+                    resolved_weights = self.weights_name
+            else:
+                resolved_weights = self.weights_name
+
+        self.model: nn.Module = getattr(models, backbone)(weights=resolved_weights)
 
         # Freeze all parameters
         self.eval()
