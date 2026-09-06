@@ -1,9 +1,4 @@
-"""Cấu hình và kiểm soát tham số cho hệ thống kiểm tra lỗi ngoại quan MVTec AD (PatchCore-style).
-
-Module này cung cấp dataclass TrainConfig và PreprocessingConfig để quản lý toàn diện
-các tham số tiền xử lý, huấn luyện, hiệu chỉnh ngưỡng kép (Dual-threshold calibration:
-P95 review, P99 fail), phân vị pixel và kích thước coreset memory bank.
-"""
+"""Configuration for the PatchCore-style offline model-building pipeline."""
 
 from __future__ import annotations
 
@@ -12,34 +7,20 @@ from dataclasses import dataclass, field
 
 from .data.transforms import PreprocessingConfig
 
-# Các giá trị mặc định của hệ thống
-DEFAULT_CATEGORY: str = "bottle"
-DEFAULT_SEED: int = 42
+DEFAULT_CATEGORY = "bottle"
+DEFAULT_SEED = 42
 
 
 @dataclass(frozen=True)
 class TrainConfig:
-    """Dataclass chứa toàn bộ tham số cấu hình cho pipeline PatchCore.
-
-    Attributes:
-        category: Tên danh mục sản phẩm cần phát hiện lỗi (mặc định: 'bottle').
-        seed: Seed cho các bộ sinh số ngẫu nhiên nhằm đảm bảo tính tái lập.
-        batch_size: Kích thước batch khi trích xuất đặc trưng hình ảnh.
-        calibration_fraction: Tỷ lệ ảnh normal held-out dùng để căn chỉnh threshold.
-        review_quantile: Phân vị normal score dùng làm ngưỡng cảnh báo REVIEW (mặc định: 0.95).
-        threshold_quantile: Phân vị normal score dùng làm ngưỡng lỗi FAIL / Image Threshold (mặc định: 0.99).
-        pixel_quantile: Phân vị pixel heatmap normal dùng làm Pixel Threshold (mặc định: 0.99).
-        min_calibration_samples: Số lượng ảnh calibration tối thiểu yêu cầu (mặc định: 20).
-        coreset_fraction: Tỷ lệ patch trích xuất để tạo coreset đại diện.
-        min_coreset_size: Kích thước tối thiểu của tập patch memory bank coreset.
-        max_coreset_size: Kích thước tối đa của tập patch memory bank coreset.
-        smooth_sigma: Độ lệch chuẩn Sigma cho bộ lọc Gaussian Smoothing làm mịn anomaly map.
-        preprocessing: Cấu hình tiền xử lý ảnh (PreprocessingConfig).
-    """
+    """Single source of truth for training and normal-only calibration."""
 
     category: str = DEFAULT_CATEGORY
+    data_root: str = "data/raw"
+    model_root: str = "models"
     seed: int = DEFAULT_SEED
     batch_size: int = 8
+    num_workers: int = 0
     calibration_fraction: float = 0.2
     review_quantile: float = 0.95
     threshold_quantile: float = 0.99
@@ -52,113 +33,76 @@ class TrainConfig:
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
 
     def validate(self) -> None:
-        """Kiểm tra tính hợp lệ của tất cả các tham số cấu hình.
-
-        Raises:
-            ValueError: Nếu bất kỳ tham số nào nằm ngoài dải hợp lệ.
-        """
         if not self.category.strip():
-            raise ValueError("Tên danh mục (category) không được để trống.")
+            raise ValueError("category must not be empty")
+        if not self.data_root.strip():
+            raise ValueError("data_root must not be empty")
+        if not self.model_root.strip():
+            raise ValueError("model_root must not be empty")
         if self.batch_size <= 0:
-            raise ValueError("Kích thước batch (batch_size) phải lớn hơn 0.")
+            raise ValueError("batch_size must be > 0")
+        if self.num_workers < 0:
+            raise ValueError("num_workers must be >= 0")
         if not 0 < self.calibration_fraction < 0.5:
-            raise ValueError("calibration_fraction phải thuộc khoảng (0, 0.5).")
+            raise ValueError("calibration_fraction must be in (0, 0.5)")
         if self.min_calibration_samples < 5:
-            raise ValueError(
-                "min_calibration_samples phải >= 5 để đảm bảo ước lượng quantile có ý nghĩa."
-            )
+            raise ValueError("min_calibration_samples must be >= 5")
         if not (0.5 <= self.review_quantile < self.threshold_quantile < 1.0):
             raise ValueError(
-                "review_quantile phải thuộc [0.5, threshold_quantile) và nhỏ hơn threshold_quantile."
+                "review_quantile must be >= 0.5 and smaller than threshold_quantile < 1.0"
             )
         if not 0.5 <= self.pixel_quantile < 1.0:
-            raise ValueError("pixel_quantile phải thuộc khoảng [0.5, 1.0).")
+            raise ValueError("pixel_quantile must be in [0.5, 1.0)")
         if not 0 < self.coreset_fraction <= 1:
-            raise ValueError("coreset_fraction phải thuộc khoảng (0, 1].")
+            raise ValueError("coreset_fraction must be in (0, 1]")
         if not 1 <= self.min_coreset_size <= self.max_coreset_size:
-            raise ValueError(
-                "Kích thước coreset tối thiểu/tối đa không hợp lệ (min phải <= max và min >= 1)."
-            )
+            raise ValueError("coreset size bounds are invalid")
         if self.smooth_sigma < 0:
-            raise ValueError("smooth_sigma không được âm.")
+            raise ValueError("smooth_sigma must be >= 0")
 
 
 def parse_args() -> TrainConfig:
-    """Đọc tham số dòng lệnh CLI và trả về cấu hình TrainConfig đã kiểm tra hợp lệ.
-
-    Returns:
-        TrainConfig: Cấu hình huấn luyện hoàn chỉnh.
-    """
     parser = argparse.ArgumentParser(
-        description="Huấn luyện mô hình phát hiện lỗi ngoại quan PatchCore cho MVTec AD"
+        description="Build a category-scoped PatchCore-style model from MVTec AD normal images"
     )
-    parser.add_argument(
-        "--category",
-        type=str,
-        default=DEFAULT_CATEGORY,
-        help="Tên danh mục sản phẩm trong MVTec AD",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=DEFAULT_SEED, help="Giá trị seed ngẫu nhiên"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=8, help="Kích thước batch cho DataLoader"
-    )
-    parser.add_argument(
-        "--calibration-fraction",
-        type=float,
-        default=0.2,
-        help="Tỷ lệ ảnh normal giữ riêng cho calibration",
-    )
-    parser.add_argument(
-        "--review-quantile",
-        type=float,
-        default=0.95,
-        help="Phân vị score normal dùng làm review_threshold",
-    )
-    parser.add_argument(
-        "--threshold-quantile",
-        type=float,
-        default=0.99,
-        help="Phân vị score normal dùng làm fail_threshold (image_threshold)",
-    )
-    parser.add_argument(
-        "--pixel-quantile",
-        type=float,
-        default=0.99,
-        help="Phân vị pixel heatmap normal dùng làm pixel_threshold",
-    )
-    parser.add_argument(
-        "--min-calibration-samples",
-        type=int,
-        default=20,
-        help="Số lượng ảnh calibration tối thiểu yêu cầu",
-    )
-    parser.add_argument(
-        "--coreset-fraction",
-        type=float,
-        default=0.05,
-        help="Tỷ lệ mẫu patch giữ lại qua coreset",
-    )
-    parser.add_argument(
-        "--smooth-sigma",
-        type=float,
-        default=1.0,
-        help="Độ mịn Gaussian smoothing cho anomaly map",
-    )
-
+    parser.add_argument("--category", default=DEFAULT_CATEGORY)
+    parser.add_argument("--data-root", default="data/raw")
+    parser.add_argument("--model-root", default="models")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--image-size", type=int, default=224)
+    parser.add_argument("--calibration-fraction", type=float, default=0.2)
+    parser.add_argument("--review-quantile", type=float, default=0.95)
+    parser.add_argument("--threshold-quantile", type=float, default=0.99)
+    parser.add_argument("--pixel-quantile", type=float, default=0.99)
+    parser.add_argument("--min-calibration-samples", type=int, default=20)
+    parser.add_argument("--coreset-fraction", type=float, default=0.05)
+    parser.add_argument("--min-coreset-size", type=int, default=100)
+    parser.add_argument("--max-coreset-size", type=int, default=1000)
+    parser.add_argument("--smooth-sigma", type=float, default=1.0)
     args = parser.parse_args()
-    config = TrainConfig(
+
+    if args.image_size <= 0:
+        parser.error("--image-size must be > 0")
+
+    cfg = TrainConfig(
         category=args.category,
+        data_root=args.data_root,
+        model_root=args.model_root,
         seed=args.seed,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
         calibration_fraction=args.calibration_fraction,
         review_quantile=args.review_quantile,
         threshold_quantile=args.threshold_quantile,
         pixel_quantile=args.pixel_quantile,
         min_calibration_samples=args.min_calibration_samples,
         coreset_fraction=args.coreset_fraction,
+        min_coreset_size=args.min_coreset_size,
+        max_coreset_size=args.max_coreset_size,
         smooth_sigma=args.smooth_sigma,
+        preprocessing=PreprocessingConfig(image_size=(args.image_size, args.image_size)),
     )
-    config.validate()
-    return config
+    cfg.validate()
+    return cfg

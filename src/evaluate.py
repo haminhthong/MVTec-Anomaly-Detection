@@ -1,11 +1,10 @@
-"""Module đánh giá hiệu năng (Evaluation Pipeline) hệ thống phát hiện lỗi ngoại quan."""
+"""CLI entry point for report-only MVTec AD evaluation."""
 
 from __future__ import annotations
 
 import argparse
 import sys
 
-from .evaluation.aupro import compute_aupro
 from .evaluation.evaluator import evaluate_category
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -13,22 +12,18 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def main() -> None:
-    """Entry point cho lệnh python -m src.evaluate."""
-    parser = argparse.ArgumentParser(description="Đánh giá mô hình PatchCore trên tập test")
-    parser.add_argument(
-        "--category",
-        type=str,
-        default=None,
-        help="Tên danh mục sản phẩm (mặc định: tự động đọc từ artifact config.json)",
-    )
-    parser.add_argument(
-        "--model-dir",
-        type=str,
-        default="models",
-        help="Đường dẫn thư mục chứa model artifacts",
-    )
+    parser = argparse.ArgumentParser(description="Evaluate a frozen anomaly-detection artifact")
+    parser.add_argument("--category", default=None)
+    parser.add_argument("--model-dir", default="models")
+    parser.add_argument("--data-root", default="data/raw")
+    parser.add_argument("--output-report", default=None)
     args = parser.parse_args()
-    evaluate_category(category=args.category, model_dir=args.model_dir)
+    evaluate_category(
+        category=args.category,
+        model_dir=args.model_dir,
+        data_root=args.data_root,
+        output_report=args.output_report,
+    )
 
 
 if __name__ == "__main__":
