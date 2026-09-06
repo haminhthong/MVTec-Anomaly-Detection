@@ -1,4 +1,4 @@
-"""Unit tests kiểm tra Held-out Normal Calibration và Dual-Thresholds."""
+"""Unit tests checking Held-out Normal Calibration and Dual-Thresholds."""
 
 from __future__ import annotations
 
@@ -24,13 +24,12 @@ def test_split_normal_paths_disjoint_and_reproducible(tmp_path: Path) -> None:
 
 def test_calibrate_thresholds_ordering() -> None:
     """Kiểm tra quan hệ thứ tự: review_threshold (P95) < fail_threshold (P99)."""
-    # 100 mẫu phân phối normal từ 1.0 đến 5.0
     scores = list(np.linspace(1.0, 5.0, 100))
     heatmaps = [np.full((28, 28), s, dtype=np.float32) for s in scores]
 
-    review_th, fail_th, pixel_th = calibrate_thresholds(
+    policy = calibrate_thresholds(
         scores, heatmaps, review_quantile=0.95, fail_quantile=0.99, pixel_quantile=0.99
     )
 
-    assert review_th < fail_th
-    assert pixel_th > 0.0
+    assert policy.review_threshold < policy.fail_threshold
+    assert policy.pixel_threshold > 0.0

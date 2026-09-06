@@ -1,7 +1,8 @@
-"""Integration tests verifying train pipeline."""
+"""Integration tests verifying offline training and artifact generation."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -9,17 +10,18 @@ from PIL import Image
 import pytest
 
 from src.config import TrainConfig
+from src.model.artifacts import ModelArtifact, SplitManifest
 from src.training.trainer import train_patchcore
 
 
-def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
-    """Run train_patchcore on dummy dataset and check category-scoped artifact."""
+def test_train_artifact_generation(tmp_path: Path) -> None:
+    """Run train_patchcore on dummy category and verify generated artifacts."""
     raw_dir = tmp_path / "data" / "raw"
-    category = "dummy_cat"
+    category = "test_item"
     train_good = raw_dir / category / "train" / "good"
     test_good = raw_dir / category / "test" / "good"
-    test_defect = raw_dir / category / "test" / "bad"
-    gt_dir = raw_dir / category / "ground_truth" / "bad"
+    test_defect = raw_dir / category / "test" / "flaw"
+    gt_dir = raw_dir / category / "ground_truth" / "flaw"
 
     for d in (train_good, test_good, test_defect, gt_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -32,6 +34,7 @@ def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
         Image.new("L", (32, 32), color=255).save(gt_dir / f"{i:03d}_mask.png")
 
     models_dir = tmp_path / "models"
+
     cfg = TrainConfig(
         category=category,
         batch_size=4,
@@ -45,14 +48,25 @@ def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
     )
 
     artifact = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
-    assert artifact.metadata.category == category
-    assert artifact.threshold_policy.review_threshold <= artifact.threshold_policy.fail_threshold
 
     cat_dir = models_dir / category
-    assert (cat_dir / "memory_bank.npy").exists()
     assert (cat_dir / "config.json").exists()
+    assert (cat_dir / "memory_bank.npy").exists()
     assert (cat_dir / "split_manifest.json").exists()
 
-    loaded_mem = np.load(cat_dir / "memory_bank.npy")
-    assert loaded_mem.ndim == 2
-    assert loaded_mem.shape[1] == 384
+    # Verify split manifest
+    split = SplitManifest.load(cat_dir / "split_manifest.json")
+    assert split.memory_count + split.calibration_count == 25
+    assert len(split.memory_files) == split.memory_count
+    assert len(split.calibration_files) == split.calibration_count
+
+    # Verify memory bank
+    mem = np.load(cat_dir / "memory_bank.npy")
+    assert mem.ndim == 2
+    assert mem.shape[1] == 384
+    assert len(mem) <= 20
+
+    # Verify loaded artifact
+    loaded_art = ModelArtifact.load(cat_dir)
+    assert loaded_art.metadata.category == category
+    assert loaded_art.threshold_policy.review_threshold <= loaded_art.threshold_policy.fail_threshold

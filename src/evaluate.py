@@ -1,11 +1,10 @@
-"""Module đánh giá hiệu năng (Evaluation Pipeline) hệ thống phát hiện lỗi ngoại quan."""
+"""CLI Entrypoint for Evaluation Pipeline (Report-Only)."""
 
 from __future__ import annotations
 
 import argparse
 import sys
 
-from .evaluation.aupro import compute_aupro
 from .evaluation.evaluator import evaluate_category
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -13,22 +12,39 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def main() -> None:
-    """Entry point cho lệnh python -m src.evaluate."""
-    parser = argparse.ArgumentParser(description="Đánh giá mô hình PatchCore trên tập test")
+    """Entry point for 'python -m src.evaluate'."""
+    parser = argparse.ArgumentParser(description="Evaluate PatchCore-style model on test split (REPORT-ONLY)")
     parser.add_argument(
         "--category",
         type=str,
-        default=None,
-        help="Tên danh mục sản phẩm (mặc định: tự động đọc từ artifact config.json)",
+        default="bottle",
+        help="Category name to evaluate",
     )
     parser.add_argument(
         "--model-dir",
         type=str,
         default="models",
-        help="Đường dẫn thư mục chứa model artifacts",
+        help="Path to models directory",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data/raw",
+        help="Path to raw datasets directory",
+    )
+    parser.add_argument(
+        "--output-report",
+        type=str,
+        default=None,
+        help="Path to output JSON report",
     )
     args = parser.parse_args()
-    evaluate_category(category=args.category, model_dir=args.model_dir)
+    evaluate_category(
+        category=args.category,
+        model_dir=args.model_dir,
+        data_dir=args.data_dir,
+        output_report=args.output_report,
+    )
 
 
 if __name__ == "__main__":

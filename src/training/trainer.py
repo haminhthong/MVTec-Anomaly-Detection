@@ -1,39 +1,43 @@
-"""Module huấn luyện mô hình phát hiện lỗi ngoại quan PatchCore (Offline Model Building).
+"""Offline Model Building Pipeline for PatchCore-style Anomaly Detection.
 
-Thực hiện 4 giai đoạn đầu trong 5 giai đoạn canonical:
-1. DATA PREPARATION: Đọc ảnh train/good, phân chia 80% Memory và 20% Held-out Calibration.
-2. NORMAL REPRESENTATION LEARNING: Trích xuất đặc trưng đa tầng ResNet18 (Layer2 128D + Layer3 256D = 384D).
-3. MEMORY BANK CONSTRUCTION: Chiếu ngẫu nhiên 64D -> Greedy K-Center Coreset -> Compact Memory Bank 384D.
-4. CALIBRATION: Căn chỉnh ngưỡng kép (P95 review, P99 fail) và pixel threshold hoàn toàn trên Normal data.
-Xuất artifact Thiết kế B: memory_bank.npy và config.json.
+Pipeline stages:
+1. DATA VALIDATION: Validate category directory, load DatasetManifest, split train/good into Memory and Calibration sets.
+2. NORMAL REPRESENTATION LEARNING: Extract intermediate feature maps using frozen FeatureExtractor.
+3. CORESET MEMORY BANK: Johnson-Lindenstrauss projection -> Greedy K-Center index selection -> compact memory bank.
+4. CALIBRATION: Establish ThresholdPolicy (P95 review, P99 fail, P99 pixel) on held-out normal images.
+5. ARTIFACT PERSISTENCE: Save category-scoped artifacts (config.json, memory_bank.npy, split_manifest.json).
 """
 
 from __future__ import annotations
 
-import json
-import platform
-import random
+from datetime import datetime, timezone
 from pathlib import Path
+import random
 from typing import Any
 
 import numpy as np
-import sklearn
 import torch
-import torchvision
 from torch.utils.data import DataLoader
 
 from ..config import TrainConfig
-from ..data.dataset import ImageFolderDataset, find_category_root
+from ..data.dataset import ImageFolderDataset
 from ..data.transforms import build_transform
+from ..data.validation import validate_mvtec_category
 from ..inference.localization import apply_heatmap_smoothing
-from ..model.coreset import greedy_coreset
+from ..model.artifacts import (
+    ModelArtifact,
+    ModelMetadata,
+    SplitManifest,
+    ThresholdPolicy,
+)
+from ..model.coreset import select_coreset_indices
+from ..model.feature_extractor import FeatureExtractor
 from ..model.memory_bank import MemoryBank
-from ..model.patch_embedding import FeatureExtractor
 from .calibration import calibrate_thresholds, split_normal_paths
 
 
 def set_seed(seed: int = 42) -> None:
-    """Cố định seed ngẫu nhiên cho Python, NumPy và PyTorch để đảm bảo tính tái lập."""
+    """Set random seeds for Python, NumPy, and PyTorch for full reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -41,29 +45,44 @@ def set_seed(seed: int = 42) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def train_patchcore(config: TrainConfig | None = None) -> dict[str, Any]:
-    """Quy trình huấn luyện và căn chỉnh ngưỡng hoàn chỉnh cho một danh mục sản phẩm.
+def train_patchcore(
+    config: TrainConfig | None = None,
+    models_dir: str | Path = "models",
+    data_dir: str | Path = "data/raw",
+) -> ModelArtifact:
+    """Run complete offline model building pipeline for a category.
 
     Args:
-        config: TrainConfig chứa các tham số huấn luyện. Nếu None sẽ dùng cấu hình mặc định.
+        config: TrainConfig containing parameters. If None, default TrainConfig is used.
+        models_dir: Base directory for storing category-scoped model artifacts.
+        data_dir: Base directory containing raw MVTec AD datasets.
 
     Returns:
-        dict[str, Any]: Payload metadata và ngưỡng đã lưu vào artifact.
+        ModelArtifact: Saved model artifact container.
     """
     cfg = config or TrainConfig()
     cfg.validate()
     set_seed(cfg.seed)
 
-    # 1. DATA PREPARATION
-    root = find_category_root(category=cfg.category)
-    all_normal_paths = sorted((root / "train" / "good").glob("*.png"))
+    # 1. DATA VALIDATION & SPLIT
+    manifest = validate_mvtec_category(data_dir=data_dir, category=cfg.category)
     memory_paths, calibration_paths = split_normal_paths(
-        all_normal_paths,
+        manifest.train_good,
         calibration_fraction=cfg.calibration_fraction,
         seed=cfg.seed,
         min_calibration_samples=cfg.min_calibration_samples,
     )
 
+    split_manifest = SplitManifest(
+        seed=cfg.seed,
+        calibration_fraction=cfg.calibration_fraction,
+        memory_count=len(memory_paths),
+        calibration_count=len(calibration_paths),
+        memory_files=[p.name for p in memory_paths],
+        calibration_files=[p.name for p in calibration_paths],
+    )
+
+    # 2. NORMAL REPRESENTATION LEARNING
     transform = build_transform(cfg.preprocessing)
     loader = DataLoader(
         ImageFolderDataset(memory_paths, transform=transform),
@@ -71,11 +90,20 @@ def train_patchcore(config: TrainConfig | None = None) -> dict[str, Any]:
         shuffle=False,
         num_workers=0,
     )
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    network = FeatureExtractor().to(device)
 
-    # 2. NORMAL REPRESENTATION LEARNING
-    batches = [network(images.to(device)).cpu().numpy() for images, _ in loader]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    network = FeatureExtractor(
+        backbone=cfg.backbone,
+        layers=cfg.feature_layers,
+        pretrained=cfg.pretrained,
+    ).to(device)
+
+    batches: list[np.ndarray] = []
+    for images, _ in loader:
+        with torch.inference_mode():
+            batch_patches = network(images.to(device)).cpu().numpy()
+            batches.append(batch_patches)
+
     full_memory = np.concatenate(batches, axis=0)
 
     # 3. MEMORY BANK CONSTRUCTION (Coreset selection)
@@ -84,7 +112,10 @@ def train_patchcore(config: TrainConfig | None = None) -> dict[str, Any]:
         max(cfg.min_coreset_size, int(cfg.coreset_fraction * len(full_memory))),
         len(full_memory),
     )
-    compact_memory = greedy_coreset(full_memory, coreset_size, seed=cfg.seed)
+    selected_indices = select_coreset_indices(
+        features=full_memory, size=coreset_size, seed=cfg.seed
+    )
+    compact_memory = full_memory[selected_indices]
     memory_bank = MemoryBank(compact_memory)
 
     # 4. CALIBRATION (Held-out Normal)
@@ -93,14 +124,15 @@ def train_patchcore(config: TrainConfig | None = None) -> dict[str, Any]:
 
     for path in calibration_paths:
         tensor = ImageFolderDataset([path], transform=transform)[0][0].unsqueeze(0).to(device)
-        patches, (height, width) = network.extract_spatial_features(tensor)
-        distances, _ = memory_bank.kneighbors(patches.cpu().numpy())
-        raw_heat = distances.reshape(height, width)
-        smoothed = apply_heatmap_smoothing(raw_heat, sigma=cfg.smooth_sigma)
-        calibration_scores.append(float(np.percentile(smoothed, 99)))
-        calibration_heatmaps.append(smoothed)
+        with torch.inference_mode():
+            patches, (height, width) = network.extract_spatial_features(tensor)
+            distances, _ = memory_bank.kneighbors(patches.cpu().numpy())
+            raw_heat = distances.reshape(height, width)
+            smoothed = apply_heatmap_smoothing(raw_heat, sigma=cfg.smooth_sigma)
+            calibration_scores.append(float(np.percentile(smoothed, 99)))
+            calibration_heatmaps.append(smoothed)
 
-    review_threshold, fail_threshold, pixel_threshold = calibrate_thresholds(
+    threshold_policy = calibrate_thresholds(
         normal_scores=calibration_scores,
         normal_heatmaps=calibration_heatmaps,
         review_quantile=cfg.review_quantile,
@@ -108,66 +140,48 @@ def train_patchcore(config: TrainConfig | None = None) -> dict[str, Any]:
         pixel_quantile=cfg.pixel_quantile,
     )
 
-    # 5. LƯU TRỮ MODEL ARTIFACT (Thiết kế B)
-    models_dir = Path("models")
-    category_models_dir = models_dir / cfg.category
-    category_models_dir.mkdir(parents=True, exist_ok=True)
+    # 5. ARTIFACT PERSISTENCE (Strict category isolation)
+    base_models = Path(models_dir)
+    category_dir = base_models / cfg.category
+    category_dir.mkdir(parents=True, exist_ok=True)
 
-    # Lưu mảng numpy memory bank
-    memory_bank.save(category_models_dir / "memory_bank.npy")
-    memory_bank.save(models_dir / "memory_bank.npy")
-    # File memory.npy duy trì tương thích ngược
-    np.save(models_dir / "memory.npy", compact_memory)
+    # Save memory bank array
+    memory_bank.save(category_dir / "memory_bank.npy")
 
-    payload: dict[str, Any] = {
-        "schema_version": 3,
-        "category": cfg.category,
-        "version": "mvtec-resnet18-patchcore-v5",
-        "seed": cfg.seed,
-        "device_used": device,
-        "backbone": "resnet18-imagenet1k-v1",
-        "feature_layers": ["layer2", "layer3"],
-        "preprocessing": cfg.preprocessing.to_dict(),
-        "calibration": {
-            "method": "held_out_normal_dual_calibration",
-            "calibration_fraction": cfg.calibration_fraction,
-            "min_calibration_samples": cfg.min_calibration_samples,
-            "memory_images": len(memory_paths),
-            "calibration_images": len(calibration_paths),
-            "review_quantile": cfg.review_quantile,
-            "threshold_quantile": cfg.threshold_quantile,
-            "pixel_quantile": cfg.pixel_quantile,
-        },
-        "thresholds": {
-            "review_threshold": review_threshold,
-            "fail_threshold": fail_threshold,
-            "image_threshold": fail_threshold,
-            "pixel_threshold": pixel_threshold,
-        },
-        "threshold": fail_threshold,  # Tương thích ngược với v2/v4
-        "review_threshold": review_threshold,
-        "pixel_threshold": pixel_threshold,
-        "coreset": {
+    # Save split manifest
+    split_manifest.save(category_dir / "split_manifest.json")
+
+    # Assemble metadata and save ModelArtifact
+    metadata = ModelMetadata(
+        model_version="1.0.0",
+        pipeline_version="1",
+        artifact_schema_version=4,
+        category=cfg.category,
+        backbone=cfg.backbone,
+        feature_layers=list(cfg.feature_layers),
+        created_at=datetime.now(timezone.utc).isoformat(),
+        device_used=device,
+    )
+
+    artifact = ModelArtifact(
+        metadata=metadata,
+        threshold_policy=threshold_policy,
+        preprocessing=cfg.preprocessing,
+        coreset_info={
             "fraction": cfg.coreset_fraction,
             "size": len(compact_memory),
             "full_memory_patches": len(full_memory),
+            "feature_dim": compact_memory.shape[1],
         },
-        "smooth_sigma": cfg.smooth_sigma,
-        "runtime": {
-            "python": platform.python_version(),
-            "torch": torch.__version__,
-            "torchvision": torchvision.__version__,
-            "scikit_learn": sklearn.__version__,
-        },
-    }
-
-    config_json = json.dumps(payload, ensure_ascii=False, indent=2)
-    (category_models_dir / "config.json").write_text(config_json, encoding="utf-8")
-    (models_dir / "config.json").write_text(config_json, encoding="utf-8")
+        smooth_sigma=cfg.smooth_sigma,
+    )
+    artifact.save(category_dir)
 
     print(
-        f"[SUCCESS] {cfg.category}: Coreset={compact_memory.shape} (từ {len(full_memory)} patches), "
-        f"Review={review_threshold:.4f} (P95), Fail/Image={fail_threshold:.4f} (P99), "
-        f"Pixel={pixel_threshold:.4f} | Calibration={len(calibration_paths)} ảnh normal"
+        f"[SUCCESS] Category '{cfg.category}': Memory Bank={compact_memory.shape} (from {len(full_memory)} patches), "
+        f"Review Threshold={threshold_policy.review_threshold:.4f} (P95), "
+        f"Fail Threshold={threshold_policy.fail_threshold:.4f} (P99), "
+        f"Pixel Threshold={threshold_policy.pixel_threshold:.4f} | "
+        f"Calibration={len(calibration_paths)} normal images"
     )
-    return payload
+    return artifact

@@ -1,18 +1,3 @@
-# MVTec AD Anomaly Detection Benchmark & Ablation Study
-# Evaluation setup: ResNet18 Backbone (Layer2 + Layer3), Image Size 224x224, Random Held-out Calibration (20%)
-
-# SECTION 1: Category-wise Benchmark (5 Key Categories & Overall Mean)
-category,split,test_samples,image_auroc,pixel_auroc,pixel_ap,aupro_0.3,threshold,status
-bottle,test,83,1.0000,0.9818,0.7157,0.9410,2.8442,evaluated
-cable,test,150,0.9910,0.9680,0.4850,0.9120,2.9150,target_benchmark
-capsule,test,132,0.9880,0.9790,0.5210,0.9250,2.7840,target_benchmark
-hazelnut,test,110,1.0000,0.9840,0.6120,0.9380,2.8620,target_benchmark
-transistor,test,100,0.9930,0.9650,0.5730,0.8990,2.9400,target_benchmark
-mean_5_categories,test,575,0.9944,0.9756,0.5813,0.9230,-,macro_average
-
-# SECTION 2: Coreset Memory Bank Ablation Study (Category: bottle)
-coreset_fraction,memory_bank_patches,ram_footprint_mb,inference_latency_ms,image_auroc,pixel_auroc
-1.00 (100%),20000,30.72,142.5,1.0000,0.9825
-0.20 (20%),4000,6.14,48.2,1.0000,0.9822
-0.10 (10%),2000,3.07,29.1,1.0000,0.9820
-0.05 (5%),1000,1.54,16.4,1.0000,0.9818
+category,test_samples,image_auroc,image_ap,pixel_auroc,pixel_ap,aupro_0.3,threshold,accuracy,defect_recall,specificity,f1_score,status
+bottle,83,1.0,1.0,0.9818,0.7157,0.941,2.8442,1.0,1.0,1.0,1.0,evaluated
+mean_1_categories,83,1.0,1.0,0.9818,0.7157,0.941,-,1.0,1.0,1.0,1.0,macro_average

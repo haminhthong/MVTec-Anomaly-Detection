@@ -1,14 +1,14 @@
-"""Unit tests kiểm tra FeatureExtractor trích xuất đặc trưng đa tầng ResNet18."""
+"""Unit tests kiểm tra FeatureExtractor trích xuất đặc trưng đa tầng."""
 
 from __future__ import annotations
 
 import torch
-from src.model.patch_embedding import FeatureExtractor
+from src.model.feature_extractor import FeatureExtractor
 
 
 def test_feature_extractor_dimensions() -> None:
     """Kiểm tra FeatureExtractor hợp nhất Layer 2 (128D) và Layer 3 (256D upsampled)."""
-    extractor = FeatureExtractor()
+    extractor = FeatureExtractor(backbone="resnet18", pretrained=False)
     dummy_input = torch.randn(2, 3, 224, 224)
 
     patches = extractor(dummy_input)

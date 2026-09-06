@@ -1,10 +1,9 @@
-"""Module thực hiện đánh giá toàn diện mô hình trên tập test MVTec AD.
+"""Evaluation Pipeline for industrial visual anomaly detection.
 
-Đảm bảo:
-1. P0 Fix: Đồng bộ 100% giữa Artifact Config và Dataset Category (không hardcode).
-2. Quy tắc Report-Only: Tuyệt đối không chọn lại ngưỡng trên tập test; sử dụng nguyên
-   vẹn threshold đã căn chỉnh từ held-out normal.
-3. Xuất kết quả 3 tầng metrics ra console và lưu vào reports/test_metrics.json.
+IMPORTANT ANTI-LEAKAGE POLICY:
+# REPORT-ONLY:
+# This module must never modify, retune, or optimize model thresholds.
+# It evaluates frozen artifacts strictly against test samples and ground-truth masks.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from ..data.dataset import find_category_root
+from ..data.validation import DatasetManifest, validate_mvtec_category
 from ..inference.detector import AnomalyDetector
 from .metrics import calculate_3tier_metrics
 
@@ -24,22 +23,32 @@ from .metrics import calculate_3tier_metrics
 def evaluate_category(
     category: str | None = None,
     model_dir: str | Path = "models",
-    output_report: str | Path = "reports/test_metrics.json",
+    data_dir: str | Path = "data/raw",
+    output_report: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Đánh giá mô hình PatchCore trên toàn bộ tập test của danh mục tương ứng.
+    """Run comprehensive 3-tier evaluation on the test split for a category.
+
+    # REPORT-ONLY:
+    # This function must never modify model thresholds or leak test labels to model building.
 
     Args:
-        category: Tên danh mục (nếu None sẽ đọc từ config của detector).
-        model_dir: Đường dẫn thư mục chứa model artifacts.
-        output_report: Đường dẫn lưu trữ báo cáo JSON.
+        category: Name of product category (if None, resolved from detector artifact).
+        model_dir: Path to directory containing model artifacts.
+        data_dir: Path to raw datasets directory.
+        output_report: Path to output JSON file (defaults to reports/<category>/test_metrics.json).
 
     Returns:
-        dict[str, Any]: Báo cáo metrics 3 tầng.
+        dict[str, Any]: 3-tier metrics dictionary.
     """
-    # Khởi tạo detector trước để đọc chính xác category từ model artifact (Fix P0)
+    # 1. Load frozen detector artifact
     det = AnomalyDetector(model_dir=model_dir, category=category)
     resolved_category = det.category
-    root = find_category_root(category=resolved_category)
+    image_size = det.preprocessing_config.image_size  # (H, W) dynamically resolved
+
+    # 2. Validate test dataset via DatasetManifest
+    manifest: DatasetManifest = validate_mvtec_category(
+        data_dir=data_dir, category=resolved_category
+    )
 
     ys: list[int] = []
     scores: list[float] = []
@@ -47,61 +56,55 @@ def evaluate_category(
     maps: list[np.ndarray] = []
 
     print(
-        f"\n[EVALUATION] Bắt đầu đánh giá mô hình PatchCore cho danh mục '{resolved_category}'..."
+        f"\n[EVALUATION] Evaluating frozen PatchCore-style model for '{resolved_category}'..."
     )
     print(f"  - Artifact version: {det.model_version}")
-    print(f"  - Calibrated Image Threshold: {det.threshold:.4f}")
-    print(f"  - Calibrated Review Threshold: {det.review_threshold:.4f}")
-    print(f"  - Calibrated Pixel Threshold: {det.pixel_threshold:.4f}")
+    print(f"  - Calibrated Image Fail Threshold: {det.threshold:.4f} (P99 normal)")
+    print(f"  - Calibrated Review Threshold: {det.review_threshold:.4f} (P95 normal)")
+    print(f"  - Calibrated Pixel Threshold: {det.pixel_threshold:.4f} (P99 normal)")
 
-    test_dir = root / "test"
-    for defect_dir in sorted(test_dir.iterdir()):
-        if not defect_dir.is_dir():
-            continue
+    h_target, w_target = image_size
+    test_items = manifest.get_all_test_paths()
 
-        is_defective = 0 if defect_dir.name == "good" else 1
+    for img_path, is_defective, mask_path in test_items:
+        with Image.open(img_path) as img:
+            s, heat = det.score(img)
 
-        for p in sorted(defect_dir.glob("*.png")):
-            with Image.open(p) as img:
-                s, heat = det.score(img)
+        ys.append(is_defective)
+        scores.append(s)
 
-            ys.append(is_defective)
-            scores.append(s)
-
-            # Đọc ground-truth mask nếu là ảnh có lỗi
-            if is_defective:
-                mask_path = (
-                    root / "ground_truth" / defect_dir.name / f"{p.stem}_mask.png"
+        # Process ground-truth mask
+        if is_defective:
+            if mask_path is None or not mask_path.exists():
+                raise FileNotFoundError(
+                    f"Defect test image '{img_path}' is missing its required ground-truth mask."
                 )
-                if mask_path.exists():
-                    with Image.open(mask_path) as m_img:
-                        mask = (
-                            np.asarray(
-                                m_img.convert("L").resize(
-                                    (224, 224), Image.Resampling.NEAREST
-                                )
-                            )
-                            > 0
+            with Image.open(mask_path) as m_img:
+                mask = (
+                    np.asarray(
+                        m_img.convert("L").resize(
+                            (w_target, h_target), Image.Resampling.NEAREST
                         )
-                else:
-                    mask = np.zeros((224, 224), dtype=bool)
-            else:
-                mask = np.zeros((224, 224), dtype=bool)
-
-            # Resize anomaly map về 224x224
-            anomaly_map = np.asarray(
-                Image.fromarray(heat.astype(np.float32)).resize(
-                    (224, 224), Image.Resampling.BILINEAR
+                    )
+                    > 0
                 )
-            )
+        else:
+            mask = np.zeros((h_target, w_target), dtype=bool)
 
-            masks.append(mask)
-            maps.append(anomaly_map)
+        # Resize anomaly heatmap to match image target resolution
+        anomaly_map = np.asarray(
+            Image.fromarray(heat.astype(np.float32)).resize(
+                (w_target, h_target), Image.Resampling.BILINEAR
+            )
+        )
+
+        masks.append(mask)
+        maps.append(anomaly_map)
 
     masks_array = np.asarray(masks)
     maps_array = np.asarray(maps)
 
-    # Tính toán 3 tầng chỉ số
+    # 3. Compute 3-tier metrics
     metrics_result = calculate_3tier_metrics(
         y_true=ys,
         scores=scores,
@@ -112,42 +115,50 @@ def evaluate_category(
 
     metrics_result["category"] = resolved_category
     metrics_result["model_version"] = det.model_version
+    metrics_result["test_samples_total"] = len(ys)
+    metrics_result["test_defect_count"] = sum(ys)
+    metrics_result["test_normal_count"] = len(ys) - sum(ys)
 
-    # Lưu báo cáo JSON
-    rep_path = Path(output_report)
-    rep_path.parent.mkdir(parents=True, exist_ok=True)
-    rep_path.write_text(
+    # 4. Save report
+    if output_report is None:
+        report_file = Path("reports") / resolved_category / "test_metrics.json"
+    else:
+        report_file = Path(output_report)
+
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(
         json.dumps(metrics_result, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    op = metrics_result["operational_decision"]
+    # Print summary
     det_tier = metrics_result["detection"]
     loc_tier = metrics_result["localization"]
+    op = metrics_result["operational_decision"]
     cm = op["confusion_matrix"]
 
-    print("\n" + "=" * 65)
-    print(f"      KẾT QUẢ ĐÁNH GIÁ 3 TẦNG: {resolved_category.upper()}")
-    print("=" * 65)
-    print(" [TIER 1: DETECTION (Định danh lỗi toàn ảnh)]")
+    print("\n" + "=" * 68)
+    print(f"      3-TIER EVALUATION REPORT: {resolved_category.upper()}")
+    print("=" * 68)
+    print(" [TIER 1: DETECTION (Image-level Classification)]")
     print(f"  - Image AUROC                : {det_tier['image_auroc']:.4f}")
     print(f"  - Image Average Precision    : {det_tier['image_average_precision']:.4f}")
-    print("\n [TIER 2: LOCALIZATION (Khoanh vùng khuyết tật pixel)]")
+    print("\n [TIER 2: LOCALIZATION (Pixel-level Segmentation)]")
     print(f"  - Pixel AUROC                : {loc_tier['pixel_auroc']:.4f}")
     print(f"  - Pixel Average Precision    : {loc_tier['pixel_average_precision']:.4f}")
     print(f"  - AUPRO (max_fpr=0.3)        : {loc_tier['aupro_0.3']:.4f}")
-    print("\n [TIER 3: OPERATIONAL QC (Quyết định vận hành tại ngưỡng Calibrated)]")
-    print(f"  - Calibrated Threshold       : {op['threshold']:.4f}")
+    print("\n [TIER 3: OPERATIONAL QC (Operating Policy at Normal-Calibrated Threshold)]")
+    print(f"  - Calibrated Fail Threshold  : {op['threshold']:.4f}")
     print(f"  - Accuracy                   : {op['accuracy']:.4f}")
     print(f"  - Precision                  : {op['precision']:.4f}")
-    print(f"  - Defect Recall (TPR)        : {op['defect_recall']:.4f} (Độ nhạy bắt lỗi)")
-    print(f"  - Specificity (TNR)          : {op['specificity']:.4f} (Độ đặc hiệu)")
+    print(f"  - Defect Recall (TPR)        : {op['defect_recall']:.4f} (Sensitivity)")
+    print(f"  - Specificity (TNR)          : {op['specificity']:.4f}")
     print(f"  - F1 Score                   : {op['f1_score']:.4f}")
-    print(f"  - False Reject Rate (FRR)    : {op['false_reject_rate']:.4f} (Tỷ lệ loại nhầm hàng tốt)")
-    print(f"  - False Accept Rate (FAR)    : {op['false_accept_rate']:.4f} (Tỷ lệ lọt sản phẩm lỗi)")
+    print(f"  - False Reject Rate (FRR)    : {op['false_reject_rate']:.4f} (Scrap waste)")
+    print(f"  - False Accept Rate (FAR)    : {op['false_accept_rate']:.4f} (Customer risk)")
     print("\n [CONFUSION MATRIX]")
     print(f"                 Pred PASS    Pred FAIL")
     print(f"  Normal (Good):   TN={cm['tn']:<4}      FP={cm['fp']:<4}  (Total: {cm['tn']+cm['fp']})")
     print(f"  Defect:          FN={cm['fn']:<4}      TP={cm['tp']:<4}  (Total: {cm['tp']+cm['fn']})")
-    print("=" * 65 + "\n")
+    print("=" * 68 + "\n")
 
     return metrics_result

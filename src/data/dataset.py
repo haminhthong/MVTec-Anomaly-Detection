@@ -1,6 +1,7 @@
-"""Module quản lý dataset hình ảnh MVTec AD và hỗ trợ truy xuất đường dẫn.
+"""Dataset management and loader for MVTec AD images.
 
-Hỗ trợ Dataset đọc ảnh và áp dụng pipeline tiền xử lý PreprocessingConfig tùy biến.
+Provides PyTorch Dataset reading images from paths and applying transforms.
+Integrates with DatasetManifest and validate_mvtec_category.
 """
 
 from __future__ import annotations
@@ -15,14 +16,15 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from .transforms import TFM, build_transform
+from .validation import DatasetManifest, validate_mvtec_category
 
 
 class ImageFolderDataset(Dataset):
-    """PyTorch Dataset đọc các tập tin ảnh từ danh sách đường dẫn truyền vào.
+    """PyTorch Dataset reading images from a list of paths.
 
     Args:
-        paths: Danh sách hoặc sequence các đường dẫn tệp ảnh (Path hoặc str).
-        transform: Hàm chuyển đổi ảnh (PIL.Image -> Tensor). Mặc định sử dụng ImageNet transform 224x224.
+        paths: Sequence of image file paths (Path or str).
+        transform: Image transform function (PIL.Image -> Tensor).
     """
 
     def __init__(
@@ -36,17 +38,17 @@ class ImageFolderDataset(Dataset):
         )
 
     def __len__(self) -> int:
-        """Trả về tổng số lượng ảnh trong dataset."""
+        """Total number of images in dataset."""
         return len(self.paths)
 
     def __getitem__(self, i: int) -> tuple[Tensor, str]:
-        """Đọc và tiền xử lý ảnh tại chỉ số i.
+        """Read and transform image at index i.
 
         Args:
-            i: Chỉ số ảnh cần lấy.
+            i: Image index.
 
         Returns:
-            tuple[Tensor, str]: Tensor ảnh đã được biến đổi [3, H, W] và đường dẫn tập tin dạng chuỗi.
+            tuple[Tensor, str]: Transformed image tensor [3, H, W] and file path string.
         """
         p = self.paths[i]
         with Image.open(p) as img:
@@ -55,27 +57,14 @@ class ImageFolderDataset(Dataset):
 
 
 def find_category_root(raw: str | Path = "data/raw", category: str = "bottle") -> Path:
-    """Tìm kiếm thư mục gốc của danh mục sản phẩm trong thư mục dữ liệu thô.
+    """Find and validate category directory under data directory.
 
     Args:
-        raw: Đường dẫn tới thư mục data/raw.
-        category: Tên danh mục sản phẩm (ví dụ: 'bottle', 'cable', 'capsule').
+        raw: Path to raw data directory.
+        category: Name of category.
 
     Returns:
-        Path: Đường dẫn tới thư mục danh mục sản phẩm tồn tại.
-
-    Raises:
-        FileNotFoundError: Nếu không tìm thấy danh mục sản phẩm ở các vị trí ứng viên.
+        Path: Path to category root directory.
     """
-    raw_path = Path(raw)
-    candidates = [
-        raw_path / category,
-        raw_path / "mvtec_anomaly_detection" / category,
-    ]
-    for c in candidates:
-        if c.exists() and c.is_dir():
-            return c
-    raise FileNotFoundError(
-        f"Không tìm thấy danh mục sản phẩm '{category}' tại '{raw_path}'. "
-        "Vui lòng chạy 'python scripts/download_data.py' để tải dữ liệu."
-    )
+    manifest = validate_mvtec_category(data_dir=raw, category=category)
+    return manifest.root_path

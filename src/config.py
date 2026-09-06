@@ -1,29 +1,35 @@
 """Cấu hình và kiểm soát tham số cho hệ thống kiểm tra lỗi ngoại quan MVTec AD (PatchCore-style).
 
 Module này cung cấp dataclass TrainConfig và PreprocessingConfig để quản lý toàn diện
-các tham số tiền xử lý, huấn luyện, hiệu chỉnh ngưỡng kép (Dual-threshold calibration:
-P95 review, P99 fail), phân vị pixel và kích thước coreset memory bank.
+các tham số tiền xử lý, kiến trúc backbone, huấn luyện, hiệu chỉnh ngưỡng vận hành kép
+(Dual-threshold calibration: P95 review, P99 fail), phân vị pixel và kích thước coreset memory bank.
 """
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 
 from .data.transforms import PreprocessingConfig
 
 # Các giá trị mặc định của hệ thống
 DEFAULT_CATEGORY: str = "bottle"
 DEFAULT_SEED: int = 42
+DEFAULT_BACKBONE: str = "resnet18"
+DEFAULT_FEATURE_LAYERS: tuple[str, ...] = ("layer2", "layer3")
 
 
 @dataclass(frozen=True)
 class TrainConfig:
-    """Dataclass chứa toàn bộ tham số cấu hình cho pipeline PatchCore.
+    """Dataclass chứa toàn bộ tham số cấu hình cho pipeline PatchCore-style.
 
     Attributes:
         category: Tên danh mục sản phẩm cần phát hiện lỗi (mặc định: 'bottle').
         seed: Seed cho các bộ sinh số ngẫu nhiên nhằm đảm bảo tính tái lập.
+        backbone: Tên kiến trúc CNN trích xuất đặc trưng (ví dụ: 'resnet18', 'resnet50').
+        feature_layers: Danh sách tên các tầng trích xuất đặc trưng trung gian.
+        pretrained: Sử dụng trọng số pretrained ImageNet cho backbone.
         batch_size: Kích thước batch khi trích xuất đặc trưng hình ảnh.
         calibration_fraction: Tỷ lệ ảnh normal held-out dùng để căn chỉnh threshold.
         review_quantile: Phân vị normal score dùng làm ngưỡng cảnh báo REVIEW (mặc định: 0.95).
@@ -39,6 +45,9 @@ class TrainConfig:
 
     category: str = DEFAULT_CATEGORY
     seed: int = DEFAULT_SEED
+    backbone: str = DEFAULT_BACKBONE
+    feature_layers: tuple[str, ...] = DEFAULT_FEATURE_LAYERS
+    pretrained: bool = True
     batch_size: int = 8
     calibration_fraction: float = 0.2
     review_quantile: float = 0.95
@@ -59,6 +68,10 @@ class TrainConfig:
         """
         if not self.category.strip():
             raise ValueError("Tên danh mục (category) không được để trống.")
+        if not self.backbone.strip():
+            raise ValueError("Tên backbone không được để trống.")
+        if not self.feature_layers:
+            raise ValueError("Danh sách feature_layers không được rỗng.")
         if self.batch_size <= 0:
             raise ValueError("Kích thước batch (batch_size) phải lớn hơn 0.")
         if not 0 < self.calibration_fraction < 0.5:
@@ -84,13 +97,9 @@ class TrainConfig:
 
 
 def parse_args() -> TrainConfig:
-    """Đọc tham số dòng lệnh CLI và trả về cấu hình TrainConfig đã kiểm tra hợp lệ.
-
-    Returns:
-        TrainConfig: Cấu hình huấn luyện hoàn chỉnh.
-    """
+    """Đọc tham số dòng lệnh CLI và trả về cấu hình TrainConfig đã kiểm tra hợp lệ."""
     parser = argparse.ArgumentParser(
-        description="Huấn luyện mô hình phát hiện lỗi ngoại quan PatchCore cho MVTec AD"
+        description="Huấn luyện mô hình phát hiện lỗi ngoại quan PatchCore-style cho MVTec AD"
     )
     parser.add_argument(
         "--category",
@@ -100,6 +109,12 @@ def parse_args() -> TrainConfig:
     )
     parser.add_argument(
         "--seed", type=int, default=DEFAULT_SEED, help="Giá trị seed ngẫu nhiên"
+    )
+    parser.add_argument(
+        "--backbone",
+        type=str,
+        default=DEFAULT_BACKBONE,
+        help="Kiến trúc mạng backbone (mặc định: resnet18)",
     )
     parser.add_argument(
         "--batch-size", type=int, default=8, help="Kích thước batch cho DataLoader"
@@ -151,6 +166,7 @@ def parse_args() -> TrainConfig:
     config = TrainConfig(
         category=args.category,
         seed=args.seed,
+        backbone=args.backbone,
         batch_size=args.batch_size,
         calibration_fraction=args.calibration_fraction,
         review_quantile=args.review_quantile,

@@ -1,15 +1,27 @@
-"""Model package for PatchCore Anomaly Detection."""
+"""Model package for PatchCore-style Anomaly Detection."""
 
 from __future__ import annotations
 
-from .coreset import greedy_coreset
+from .artifacts import (
+    ModelArtifact,
+    ModelMetadata,
+    SplitManifest,
+    ThresholdPolicy,
+)
+from .coreset import greedy_coreset, select_coreset_indices
+from .feature_extractor import FeatureExtractor
 from .memory_bank import MemoryBank
-from .patch_embedding import FeatureExtractor
-from .registry import ModelRegistry
+from .registry import ModelNotFoundError, ModelRegistry
 
 __all__ = [
     "FeatureExtractor",
+    "select_coreset_indices",
     "greedy_coreset",
     "MemoryBank",
     "ModelRegistry",
+    "ModelNotFoundError",
+    "ThresholdPolicy",
+    "SplitManifest",
+    "ModelMetadata",
+    "ModelArtifact",
 ]

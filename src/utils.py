@@ -1,31 +1,25 @@
-"""Module tiện ích chứa các hàm hỗ trợ hệ thống (Utility Functions).
-
-Re-export các hàm từ các subsystem chuyên biệt:
-- set_seed từ src.training.trainer
-- greedy_coreset từ src.model.coreset
-- apply_heatmap_smoothing, create_heatmap_overlay_b64 từ src.inference.localization
-- save_json
-"""
+"""Shared utility functions and logging setup."""
 
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from .inference.localization import (
     apply_heatmap_smoothing,
     compute_anomalous_area_ratio,
     create_heatmap_overlay_b64,
 )
-from .model.coreset import greedy_coreset
+from .model.coreset import greedy_coreset, select_coreset_indices
 from .training.trainer import set_seed
 
 LOGGER: logging.Logger = logging.getLogger("mvtec_anomaly_detection")
 
 
-def save_json(path: str | Path, payload: dict) -> None:
-    """Ghi dữ liệu dictionary ra tập tin JSON với định dạng utf-8 thụt lề sạch đẹp."""
+def save_json(path: str | Path, payload: dict[str, Any]) -> None:
+    """Save dictionary to formatted UTF-8 JSON file."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -34,6 +28,7 @@ def save_json(path: str | Path, payload: dict) -> None:
 __all__ = [
     "set_seed",
     "save_json",
+    "select_coreset_indices",
     "greedy_coreset",
     "apply_heatmap_smoothing",
     "compute_anomalous_area_ratio",

@@ -1,16 +1,9 @@
-"""Module ModelRegistry quản lý mô hình đa danh mục (Multi-Category Support).
+"""ModelRegistry managing multi-category model resolution, caching, and lifecycle.
 
-Hỗ trợ cấu trúc lưu trữ:
-models/
-├── bottle/
-│   ├── memory_bank.npy
-│   └── config.json
-├── cable/
-│   ├── memory_bank.npy
-│   └── config.json
-└── config.json (hoặc fallback đơn danh mục)
-
-Cung cấp API tìm kiếm, nạp mô hình theo danh mục sản phẩm và lazy caching.
+Enforces strict category isolation:
+- Models are strictly scoped under models/<category>/
+- NO cross-category fallback (e.g. asking for 'cable' will never load 'bottle')
+- Raises ModelNotFoundError if the requested category is not trained
 """
 
 from __future__ import annotations
@@ -23,12 +16,16 @@ if TYPE_CHECKING:
     from ..inference.detector import AnomalyDetector
 
 
+class ModelNotFoundError(FileNotFoundError):
+    """Raised when artifacts for a requested category cannot be found."""
+
+
 class ModelRegistry:
-    """Registry quản lý, phát hiện và nạp mô hình AnomalyDetector cho từng danh mục.
+    """Registry managing model discovery, resolution, and caching per category.
 
     Attributes:
-        base_dir: Thư mục gốc chứa các artifacts mô hình.
-        _cached_detectors: Bộ nhớ đệm lưu các instance detector đã nạp.
+        base_dir: Root directory containing category-scoped model artifacts.
+        _cached_detectors: In-memory cache of instantiated AnomalyDetector objects.
     """
 
     def __init__(self, base_dir: str | Path = "models") -> None:
@@ -36,73 +33,104 @@ class ModelRegistry:
         self._cached_detectors: dict[str, AnomalyDetector] = {}
 
     def list_categories(self) -> list[str]:
-        """Liệt kê danh sách tất cả các danh mục sản phẩm có artifact sẵn sàng."""
+        """List all category names with valid, trained model artifacts.
+
+        Returns:
+            list[str]: Alphabetically sorted list of available category names.
+        """
         if not self.base_dir.exists():
             return []
 
         categories: set[str] = set()
-
-        # Kiểm tra các thư mục con models/{category}/
         for p in self.base_dir.iterdir():
-            if p.is_dir():
+            if p.is_dir() and not p.name.startswith((".", "_")):
                 cfg = p / "config.json"
                 mem = p / "memory_bank.npy"
                 legacy_mem = p / "memory.npy"
                 if cfg.exists() and (mem.exists() or legacy_mem.exists()):
                     categories.add(p.name)
 
-        # Kiểm tra mô hình tại root models/
-        root_cfg = self.base_dir / "config.json"
-        root_mem = self.base_dir / "memory_bank.npy"
-        legacy_root_mem = self.base_dir / "memory.npy"
-        if root_cfg.exists() and (root_mem.exists() or legacy_root_mem.exists()):
-            try:
-                data = json.loads(root_cfg.read_text(encoding="utf-8"))
-                cat = data.get("category", "bottle")
-                categories.add(cat)
-            except (json.JSONDecodeError, OSError):
-                pass
-
         return sorted(categories)
 
-    def resolve_category_dir(self, category: str = "bottle") -> Path:
-        """Xác định đường dẫn thư mục chứa artifact cho danh mục tương ứng."""
-        sub_dir = self.base_dir / category
-        if sub_dir.exists() and (sub_dir / "config.json").exists():
-            return sub_dir
+    def resolve_category_dir(self, category: str) -> Path:
+        """Resolve and strictly validate the artifact directory for a category.
 
-        # Fallback về thư mục root models/ nếu category khớp hoặc thư mục con chưa tạo
-        root_cfg = self.base_dir / "config.json"
-        if root_cfg.exists():
-            return self.base_dir
+        Args:
+            category: Name of product category (e.g. 'bottle').
 
-        raise FileNotFoundError(
-            f"Không tìm thấy artifacts mô hình cho danh mục '{category}' tại '{self.base_dir}'."
-        )
+        Returns:
+            Path: Path to models/<category> directory.
 
-    def get_metadata(self, category: str = "bottle") -> dict[str, Any]:
-        """Đọc và trả về metadata config.json của danh mục."""
+        Raises:
+            ModelNotFoundError: If the category directory or required artifacts do not exist.
+        """
+        if not category or not category.strip():
+            raise ValueError("Category name must not be empty.")
+
+        category = category.strip()
+        cat_dir = self.base_dir / category
+
+        if not cat_dir.exists() or not cat_dir.is_dir():
+            raise ModelNotFoundError(
+                f"Model artifacts for category '{category}' do not exist at '{cat_dir}'. "
+                f"Available categories: {self.list_categories()}."
+            )
+
+        config_path = cat_dir / "config.json"
+        if not config_path.exists():
+            raise ModelNotFoundError(
+                f"Missing 'config.json' for category '{category}' at '{cat_dir}'."
+            )
+
+        memory_path = cat_dir / "memory_bank.npy"
+        legacy_memory_path = cat_dir / "memory.npy"
+        if not memory_path.exists() and not legacy_memory_path.exists():
+            raise ModelNotFoundError(
+                f"Missing 'memory_bank.npy' for category '{category}' at '{cat_dir}'."
+            )
+
+        return cat_dir
+
+    def get_metadata(self, category: str) -> dict[str, Any]:
+        """Read config.json metadata for a specific category.
+
+        Args:
+            category: Name of product category.
+
+        Returns:
+            dict[str, Any]: Configuration dictionary.
+        """
         cat_dir = self.resolve_category_dir(category)
         cfg_path = cat_dir / "config.json"
-        if not cfg_path.exists():
-            raise FileNotFoundError(f"Không tìm thấy file config tại '{cfg_path}'.")
         return json.loads(cfg_path.read_text(encoding="utf-8"))
 
-    def version(self, category: str = "bottle") -> str:
-        """Lấy chuỗi phiên bản mô hình của danh mục."""
+    def version(self, category: str) -> str:
+        """Get model version string for category."""
         try:
-            return str(self.get_metadata(category).get("version", "unknown"))
-        except FileNotFoundError:
+            meta = self.get_metadata(category)
+            return str(meta.get("model_version", meta.get("version", "unknown")))
+        except ModelNotFoundError:
             return "not_trained"
 
-    def get_detector(self, category: str = "bottle") -> AnomalyDetector:
-        """Lấy instance AnomalyDetector cho danh mục (sử dụng cache nếu đã nạp)."""
+    def get_detector(self, category: str) -> AnomalyDetector:
+        """Retrieve AnomalyDetector instance for category (using cached instance if available).
+
+        Args:
+            category: Name of product category.
+
+        Returns:
+            AnomalyDetector: Instantiated detector.
+        """
         if category in self._cached_detectors:
             return self._cached_detectors[category]
 
         from ..inference.detector import AnomalyDetector
 
         cat_dir = self.resolve_category_dir(category)
-        detector = AnomalyDetector(model_dir=cat_dir)
+        detector = AnomalyDetector(model_dir=cat_dir, category=category)
         self._cached_detectors[category] = detector
         return detector
+
+    def clear_cache(self) -> None:
+        """Clear cached detector instances."""
+        self._cached_detectors.clear()

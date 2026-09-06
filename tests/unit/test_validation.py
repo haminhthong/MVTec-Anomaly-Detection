@@ -1,0 +1,86 @@
+"""Unit tests for DatasetManifest and validate_mvtec_category."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from src.data.validation import (
+    DatasetManifest,
+    DatasetValidationError,
+    validate_mvtec_category,
+)
+
+
+def create_dummy_mvtec_structure(
+    root: Path,
+    category: str = "bottle",
+    include_masks: bool = True,
+    train_count: int = 25,
+    defect_count: int = 5,
+) -> Path:
+    """Helper to create a minimal compliant MVTec AD category directory."""
+    cat_dir = root / category
+    train_good = cat_dir / "train" / "good"
+    train_good.mkdir(parents=True, exist_ok=True)
+    for i in range(train_count):
+        Image.new("RGB", (32, 32), color=(i, i, i)).save(train_good / f"{i:03d}.png")
+
+    test_good = cat_dir / "test" / "good"
+    test_good.mkdir(parents=True, exist_ok=True)
+    for i in range(5):
+        Image.new("RGB", (32, 32), color=(255, i, i)).save(test_good / f"{i:03d}.png")
+
+    test_defect = cat_dir / "test" / "broken"
+    test_defect.mkdir(parents=True, exist_ok=True)
+    for i in range(defect_count):
+        Image.new("RGB", (32, 32), color=(0, 255, i)).save(test_defect / f"{i:03d}.png")
+
+    if include_masks:
+        gt_dir = cat_dir / "ground_truth" / "broken"
+        gt_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(defect_count):
+            Image.new("L", (32, 32), color=255).save(gt_dir / f"{i:03d}_mask.png")
+
+    return cat_dir
+
+
+def test_validate_mvtec_category_success(tmp_path: Path) -> None:
+    """Test successful validation producing DatasetManifest."""
+    create_dummy_mvtec_structure(tmp_path, category="bottle", include_masks=True)
+    manifest = validate_mvtec_category(data_dir=tmp_path, category="bottle")
+
+    assert isinstance(manifest, DatasetManifest)
+    assert manifest.category == "bottle"
+    assert manifest.total_train == 25
+    assert manifest.total_test_good == 5
+    assert manifest.total_test_defect == 5
+    assert manifest.total_test == 10
+    assert "broken" in manifest.defect_types
+    assert len(manifest.masks) == 5
+
+
+def test_validate_mvtec_missing_mask_raises_error(tmp_path: Path) -> None:
+    """Requirement: defect test image missing ground-truth mask MUST fail."""
+    create_dummy_mvtec_structure(tmp_path, category="cable", include_masks=False)
+
+    with pytest.raises(DatasetValidationError, match="Missing ground-truth mask|Missing ground_truth directory"):
+        validate_mvtec_category(data_dir=tmp_path, category="cable")
+
+
+def test_validate_mvtec_nonexistent_category(tmp_path: Path) -> None:
+    """Category not found raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="not found under"):
+        validate_mvtec_category(data_dir=tmp_path, category="nonexistent_cat")
+
+
+def test_validate_mvtec_empty_train_raises_error(tmp_path: Path) -> None:
+    """Empty train/good raises DatasetValidationError."""
+    cat_dir = tmp_path / "bottle"
+    (cat_dir / "train" / "good").mkdir(parents=True, exist_ok=True)
+    (cat_dir / "test" / "good").mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(DatasetValidationError, match="No valid images found in train directory"):
+        validate_mvtec_category(data_dir=tmp_path, category="bottle")

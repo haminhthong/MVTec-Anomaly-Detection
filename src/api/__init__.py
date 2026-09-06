@@ -1,15 +1,16 @@
-"""API package for PatchCore Anomaly Detection."""
+"""API package for industrial visual anomaly detection."""
 
 from __future__ import annotations
 
 from .app import MODEL_DIR, app, health
 from .schemas import (
+    BatchInspectionResponse,
     HealthResponse,
     InspectionResponse,
-    LocalizationResult,
-    ModelInfo,
-    PredictionResult,
+    LocalizationBreakdown,
+    ModelBreakdown,
     ReadinessResponse,
+    ScoreBreakdown,
 )
 
 __all__ = [
@@ -19,7 +20,8 @@ __all__ = [
     "HealthResponse",
     "ReadinessResponse",
     "InspectionResponse",
-    "PredictionResult",
-    "LocalizationResult",
-    "ModelInfo",
+    "BatchInspectionResponse",
+    "ScoreBreakdown",
+    "LocalizationBreakdown",
+    "ModelBreakdown",
 ]

@@ -1,4 +1,4 @@
-"""Integration tests verifying train pipeline."""
+"""Integration tests verifying AnomalyDetector loads artifact and scores samples correctly."""
 
 from __future__ import annotations
 
@@ -9,17 +9,18 @@ from PIL import Image
 import pytest
 
 from src.config import TrainConfig
+from src.inference.detector import AnomalyDetector
 from src.training.trainer import train_patchcore
 
 
-def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
-    """Run train_patchcore on dummy dataset and check category-scoped artifact."""
+def test_detector_from_saved_artifact(tmp_path: Path) -> None:
+    """Train dummy artifact, load detector, and inspect an image."""
     raw_dir = tmp_path / "data" / "raw"
-    category = "dummy_cat"
+    category = "widget"
     train_good = raw_dir / category / "train" / "good"
     test_good = raw_dir / category / "test" / "good"
-    test_defect = raw_dir / category / "test" / "bad"
-    gt_dir = raw_dir / category / "ground_truth" / "bad"
+    test_defect = raw_dir / category / "test" / "crack"
+    gt_dir = raw_dir / category / "ground_truth" / "crack"
 
     for d in (train_good, test_good, test_defect, gt_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -36,23 +37,22 @@ def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        review_quantile=0.90,
-        threshold_quantile=0.98,
-        pixel_quantile=0.98,
         coreset_fraction=0.1,
         min_coreset_size=5,
         max_coreset_size=20,
     )
+    _ = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
 
-    artifact = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
-    assert artifact.metadata.category == category
-    assert artifact.threshold_policy.review_threshold <= artifact.threshold_policy.fail_threshold
+    detector = AnomalyDetector(model_dir=models_dir, category=category)
+    assert detector.category == category
+    assert detector.threshold > 0
 
-    cat_dir = models_dir / category
-    assert (cat_dir / "memory_bank.npy").exists()
-    assert (cat_dir / "config.json").exists()
-    assert (cat_dir / "split_manifest.json").exists()
+    test_img = Image.new("RGB", (64, 64), color=(100, 100, 100))
+    result = detector.inspect(test_img, include_overlay=True)
 
-    loaded_mem = np.load(cat_dir / "memory_bank.npy")
-    assert loaded_mem.ndim == 2
-    assert loaded_mem.shape[1] == 384
+    assert "inspection_id" in result
+    assert result["category"] == category
+    assert result["decision"] in {"PASS", "REVIEW", "FAIL"}
+    assert result["scores"]["anomaly_score"] >= 0
+    assert result["overlay_b64"] is not None
+    assert result["overlay_b64"].startswith("data:image/png;base64,")

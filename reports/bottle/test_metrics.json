@@ -1,0 +1,42 @@
+{
+  "detection": {
+    "image_auroc": 1.0,
+    "image_average_precision": 0.9999999999999998
+  },
+  "localization": {
+    "pixel_auroc": 0.9817616976676422,
+    "pixel_average_precision": 0.7157053336649352,
+    "aupro_0.3": 0.9410057341428645
+  },
+  "operational_decision": {
+    "threshold": 2.844173481464385,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "defect_recall": 1.0,
+    "specificity": 1.0,
+    "f1_score": 1.0,
+    "false_reject_rate": 0.0,
+    "false_accept_rate": 0.0,
+    "confusion_matrix": {
+      "tp": 63,
+      "fp": 0,
+      "tn": 20,
+      "fn": 0
+    }
+  },
+  "image_auroc": 1.0,
+  "image_average_precision": 0.9999999999999998,
+  "pixel_auroc": 0.9817616976676422,
+  "pixel_average_precision": 0.7157053336649352,
+  "aupro_0.3": 0.9410057341428645,
+  "threshold": 2.844173481464385,
+  "accuracy_at_threshold": 1.0,
+  "defect_recall": 1.0,
+  "false_reject_rate": 0.0,
+  "false_accept_rate": 0.0,
+  "category": "bottle",
+  "model_version": "1.0.0",
+  "test_samples_total": 83,
+  "test_defect_count": 63,
+  "test_normal_count": 20
+}
