@@ -1,10 +1,4 @@
-"""Pydantic Schemas for Industrial Visual Anomaly Detection API.
-
-Provides stable data contracts:
-- Monitoring (/health, /health/live, /health/ready)
-- Model registry (/models, /models/{category})
-- Single and batch inspection endpoints (/inspect, /inspect/batch)
-"""
+"""Schema HTTP ổn định cho inspection triage và human QC."""
 
 from __future__ import annotations
 
@@ -15,78 +9,77 @@ from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
-    """Schema for basic health check endpoint."""
+    """Thông tin health tổng quát."""
 
-    status: str = Field(..., description="Service status: 'ok' or 'degraded'")
-    model_ready: bool = Field(..., description="True if at least one model is available")
-    model_version: str = Field(..., description="Active model version")
-    categories: list[str] = Field(default_factory=list, description="Available product categories")
+    status: str
+    model_ready: bool
+    model_version: str
+    categories: list[str] = Field(default_factory=list)
 
 
 class ReadinessResponse(BaseModel):
-    """Schema for readiness probe endpoint."""
+    """Readiness của service."""
 
-    ready: bool = Field(..., description="True if models and index are ready to serve")
-    categories: list[str] = Field(..., description="Loaded category models")
-    active_device: str = Field(..., description="Hardware device ('cuda' or 'cpu')")
+    ready: bool
+    categories: list[str]
+    active_device: str
 
 
 class ScoreBreakdown(BaseModel):
-    """Anomaly scores and operating thresholds."""
+    """Score và ngưỡng auto-pass; alias cũ chỉ để tương thích client."""
 
-    anomaly_score: float = Field(..., description="99th percentile image anomaly score")
-    review_threshold: float = Field(..., description="P95 normal calibration review threshold")
-    fail_threshold: float = Field(..., description="P99 normal calibration fail threshold")
+    anomaly_score: float | None = None
+    auto_pass_threshold: float
+    review_threshold: float | None = None
+    fail_threshold: float | None = None
 
 
 class LocalizationBreakdown(BaseModel):
-    """Localization details and surface defect area ratio."""
+    """Bằng chứng không gian, không diễn giải thành business severity."""
 
-    anomalous_area_ratio: float = Field(..., description="Fraction of surface exceeding pixel threshold")
-    peak_score: float = Field(..., description="Peak anomaly distance in heatmap")
-    pixel_threshold: float = Field(..., description="P99 normal heatmap pixel threshold")
+    anomalous_area_ratio: float = 0.0
+    peak_anomaly_score: float = 0.0
+    peak_score: float = 0.0
+    pixel_threshold: float
 
 
 class ModelBreakdown(BaseModel):
-    """Model version and category identity."""
+    """Identity của model release."""
 
-    version: str = Field(..., description="Model artifact version")
-    category: str = Field(..., description="Product category name")
+    version: str
+    category: str
+    release_id: str | None = None
 
 
 class InspectionResponse(BaseModel):
-    """Stable production response schema for /inspect."""
+    """Contract V1: RECAPTURE_REQUIRED, AUTO_PASS hoặc HUMAN_REVIEW."""
 
-    inspection_id: str = Field(
-        default_factory=lambda: f"insp_{uuid.uuid4().hex[:12]}",
-        description="Unique inspection transaction identifier",
+    inspection_id: str = Field(default_factory=lambda: f"insp_{uuid.uuid4().hex[:12]}")
+    category: str
+    decision: str
+    severity: str | None = Field(
+        default=None,
+        description="Deprecated; không phải nhãn major/minor và không dùng để reject.",
     )
-    category: str = Field(..., description="Product category inspected")
-    decision: str = Field(
-        ..., description="Operational decision: 'PASS', 'REVIEW', or 'FAIL'"
-    )
-    severity: str = Field(
-        ..., description="Severity classification: 'PASS', 'REVIEW', 'FAIL_MINOR', 'FAIL_MAJOR'"
-    )
-    scores: ScoreBreakdown = Field(..., description="Breakdown of anomaly score and thresholds")
-    localization: LocalizationBreakdown = Field(
-        ..., description="Defect localization metrics and anomalous area ratio"
-    )
-    model: ModelBreakdown = Field(..., description="Model version and metadata")
-    overlay_b64: str | None = Field(
-        None, description="Base64 encoded PNG heatmap overlay image"
-    )
+    scores: ScoreBreakdown
+    localization: LocalizationBreakdown
+    capture_quality: dict[str, Any] = Field(default_factory=dict)
+    model: ModelBreakdown
+    line_id: str | None = None
+    camera_id: str | None = None
+    timestamp: str | None = None
+    overlay_b64: str | None = None
 
-    # Convenience backward compatibility aliases
-    anomaly_score: float | None = Field(default=None, description="Flat anomaly score alias")
-    threshold: float | None = Field(default=None, description="Flat threshold alias")
-    heatmap_shape: list[int] | None = Field(default=None, description="Heatmap grid dimensions")
-    model_version: str | None = Field(default=None, description="Flat model version alias")
+    # Alias phẳng cho client cũ.
+    anomaly_score: float | None = None
+    threshold: float | None = None
+    heatmap_shape: list[int] | None = None
+    model_version: str | None = None
 
 
 class BatchInspectionResponse(BaseModel):
-    """Schema for /inspect/batch endpoint."""
+    """Response của batch inspection."""
 
-    batch_size: int = Field(..., description="Number of items inspected in this batch")
-    category: str = Field(..., description="Product category inspected")
-    items: list[InspectionResponse] = Field(..., description="Inspection responses for each input image")
+    batch_size: int
+    category: str
+    items: list[InspectionResponse]

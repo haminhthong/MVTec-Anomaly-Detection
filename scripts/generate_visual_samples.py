@@ -1,8 +1,8 @@
 """Script tạo ảnh so sánh trực quan lỗi ngoại quan (Visual Inspection Comparison).
 
-Sinh ra ảnh 4 khung hình chất lượng cao:
+Sinh ra ảnh 4 khung hình:
 [Original Image] | [Ground Truth Mask] | [Anomaly Heatmap] | [Overlay & Decision]
-sử dụng dual-threshold và tính toán diện tích khuyết tật (Anomalous Area Ratio).
+với một ngưỡng AUTO_PASS và diện tích vùng vượt pixel threshold.
 """
 
 from __future__ import annotations
@@ -36,15 +36,16 @@ def generate_sample_comparison(
     image = Image.open(image_path).convert("RGB")
     res = detector.inspect(image, include_overlay=False)
 
-    score = res["prediction"]["anomaly_score"]
-    decision = res["prediction"]["decision"]
-    severity = res["prediction"]["severity"]
+    score = res["scores"]["anomaly_score"]
+    decision = res["decision"]
     area_ratio = res["localization"]["anomalous_area_ratio"]
+    auto_pass_threshold = res["scores"]["auto_pass_threshold"]
+    pixel_threshold = res["localization"]["pixel_threshold"]
     _, heatmap = detector.score(image)
 
-    if decision == "FAIL":
+    if decision == "HUMAN_REVIEW":
         decision_color = "crimson"
-    elif decision == "REVIEW":
+    elif decision == "RECAPTURE_REQUIRED":
         decision_color = "darkorange"
     else:
         decision_color = "forestgreen"
@@ -82,7 +83,7 @@ def generate_sample_comparison(
         "1. Original Image",
         "2. Ground Truth Mask",
         "3. PatchCore Anomaly Map",
-        f"4. Overlay ({decision} - {severity})",
+        f"4. Overlay ({decision})",
     ]
 
     images_to_show = [
@@ -104,8 +105,8 @@ def generate_sample_comparison(
         ax.axis("off")
 
     status_text = (
-        f"Defect: {title_suffix} | Score: {score:.3f} | Review Th: {detector.review_threshold:.3f} | "
-        f"Fail Th: {detector.threshold:.3f} | Area: {area_ratio*100:.1f}% | Decision: {decision} ({severity})"
+        f"Defect: {title_suffix} | Score: {score:.3f} | AUTO_PASS Th: {auto_pass_threshold:.3f} | "
+        f"Pixel Th: {pixel_threshold:.3f} | Area: {area_ratio*100:.1f}% | Decision: {decision}"
     )
     fig.suptitle(
         status_text,

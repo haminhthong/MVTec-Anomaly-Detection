@@ -8,11 +8,11 @@ This repository implements a production-grade, One-Class Visual Anomaly Detectio
 
 1. **Explicit Pipeline Boundaries**: The codebase is strictly organized into 4 decoupled canonical pipelines: Data, Model Building, Evaluation, and Serving.
 2. **Artifact-Centric Lifecycle**:
-   - Training produces a self-contained, versioned artifact bundle under `models/<category>/`.
+   - Training produces a self-contained, immutable artifact bundle under `models/releases/<category>-v<version>/` and updates `models/production.json`.
    - Inference and Evaluation strictly consume frozen artifacts.
    - The REST API is a lightweight HTTP transport layer with zero embedded ML math.
 3. **Strict Category Isolation**: Models are strictly partitioned by category. The `ModelRegistry` rejects cross-category fallback (e.g., requesting `cable` will never fall back to `bottle`).
-4. **Anti-Leakage & Operational Calibration**: Defect test images and ground-truth masks are never touched during offline model building. Thresholds represent operational policies (P95 REVIEW, P99 FAIL) calibrated on held-out normal samples.
+4. **Anti-Leakage & Operational Calibration**: `NormalReferenceManifest` chỉ chứa train/good; `LockedEvaluationManifest` chỉ được đọc ở final evaluation. Policy V1 chỉ có normal-only AUTO_PASS và HUMAN_REVIEW.
 
 ---
 
@@ -21,27 +21,29 @@ This repository implements a production-grade, One-Class Visual Anomaly Detectio
 ```mermaid
 flowchart TD
     subgraph DataPipeline["1. DATA PIPELINE"]
-        R1["Raw Category Images (data/raw/<category>)"] --> V1["validate_mvtec_category()"]
-        V1 --> DM["DatasetManifest (train_good, test_good, test_defect, masks)"]
+        R1["Raw Category Images (data/raw/<category>)"] --> V1["validate_reference_category()"]
+        V1 --> DM["NormalReferenceManifest (train/good)"]
+        R1 --> V2["validate_locked_evaluation()"]
+        V2 --> LOCK["LockedEvaluationManifest (test + masks)"]
     end
 
     subgraph ModelBuilding["2. MODEL BUILDING PIPELINE"]
-        DM --> S1["split_normal_paths (80% Memory / 20% Held-out Normal)"]
+        DM --> S1["split Reference / Dev / Calibration"]
         S1 --> SM["split_manifest.json (Reproducibility)"]
         S1 --> FE["FeatureExtractor (ResNet18 layer2 + layer3)"]
         FE --> CS["Greedy K-Center Coreset Selection (64D Projection -> 384D Memory)"]
         CS --> MB["MemoryBank (1-NN Euclidean Search Index)"]
         S1 --> CAL["Held-out Normal Calibration"]
-        MB & CAL --> TP["ThresholdPolicy (P95 review, P99 fail, P99 pixel)"]
-        TP & MB & SM --> ART["ModelArtifact (models/<category>/)"]
+        MB & CAL --> TP["ThresholdPolicy (P99 heuristic AUTO_PASS, P99 pixel)"]
+        TP & MB & SM --> ART["ModelArtifact (immutable release)"]
     end
 
     subgraph EvaluationPipeline["3. EVALUATION PIPELINE (REPORT-ONLY)"]
         ART -.-> EV["evaluate_category()"]
-        DM --> EV
+        LOCK --> EV
         EV --> T1["Tier 1: Detection (Image AUROC, Image AP)"]
         EV --> T2["Tier 2: Localization (Pixel AUROC, Pixel AP, AUPRO@0.3)"]
-        EV --> T3["Tier 3: Operational QC (Accuracy, Recall, FAR, FRR, Confusion Matrix)"]
+        EV --> T3["Operational QC: normal auto-pass/review và defect escape"]
         T1 & T2 & T3 --> REP["reports/<category>/test_metrics.json & reports/benchmark.csv"]
     end
 
@@ -58,13 +60,13 @@ flowchart TD
 ## 3. Component Breakdown
 
 ### 3.1 Data Pipeline (`src/data/`)
-- `validation.py`: Enforces dataset structural integrity. Checks for directory presence, non-empty image lists, supported extensions (`.png`, `.jpg`, etc.), uncorrupted files, and verifies that **every defective test image has a corresponding ground-truth mask**. Produces an immutable `DatasetManifest`.
+- `validation.py`: Tách validator reference-only khỏi validator locked evaluation. Reference chỉ kiểm tra `train/good`; evaluation mới kiểm tra test và ground-truth mask.
 - `dataset.py`: PyTorch `ImageFolderDataset` consuming paths directly from the manifest.
 - `transforms.py`: Configurable `PreprocessingConfig` defining input image resolution, normalization vectors, and torchvision transformations.
 
 ### 3.2 Model Building Pipeline (`src/training/` & `src/model/`)
 - `trainer.py`: Coordinates the offline model building process. Does not run gradient backpropagation; instead, runs forward feature extraction through a frozen backbone, builds the memory bank via coreset subsampling, and calibrates operating thresholds.
-- `calibration.py`: Held-out normal calibration separating 80% Memory Set and 20% Calibration Set. Computes empirical percentiles (P95 review, P99 fail, P99 pixel).
+- `calibration.py`: Tách Reference / Dev / Calibration bằng seed cố định và tính P99 heuristic normal-only cho AUTO_PASS cùng pixel threshold.
 - `artifacts.py`: Implements `ModelArtifact`, `ThresholdPolicy`, `SplitManifest`, and `ModelMetadata`.
 
 ### 3.3 Evaluation Pipeline (`src/evaluation/`)
@@ -74,6 +76,6 @@ flowchart TD
 
 ### 3.4 Serving Pipeline (`src/inference/` & `src/api/`)
 - `detector.py`: Runtime inspection engine. Supports both single-image inspection and high-throughput batched inference (`inspect_batch`).
-- `registry.py`: Manages loaded detector instances. Strictly scopes model lookups to `models/<category>/`. Raises `ModelNotFoundError` on missing models.
+- `registry.py`: Resolve category hoặc line_id qua production pointer, không fallback sang category khác; thiếu mapping thì báo lỗi.
 - `app.py`: FastAPI server exposing `/health`, `/health/live`, `/health/ready`, `/models`, `/inspect`, and `/inspect/batch`. Pure transport and validation layer.
 - `schemas.py`: Pydantic data contracts ensuring clean API responses.

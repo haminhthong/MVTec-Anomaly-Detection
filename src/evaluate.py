@@ -38,12 +38,18 @@ def main() -> None:
         default=None,
         help="Path to output JSON report",
     )
+    parser.add_argument(
+        "--reopen-locked-test",
+        action="store_true",
+        help="Cho phép ghi lại locked report hiện có sau khi chủ động mở lại",
+    )
     args = parser.parse_args()
     evaluate_category(
         category=args.category,
         model_dir=args.model_dir,
         data_dir=args.data_dir,
         output_report=args.output_report,
+        reopen=args.reopen_locked_test,
     )
 
 

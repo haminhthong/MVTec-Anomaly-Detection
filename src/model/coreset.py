@@ -50,7 +50,7 @@ def select_coreset_indices(
 
     rng = np.random.default_rng(seed)
 
-    # 1. Johnson-Lindenstrauss Random Projection to accelerate Euclidean distance calculations
+    # 1. Chiếu ngẫu nhiên Johnson-Lindenstrauss để tăng tốc khoảng cách Euclid.
     if dim > projection_dim:
         proj_matrix = rng.normal(size=(dim, projection_dim)).astype(np.float32)
         proj_matrix /= np.sqrt(float(projection_dim))
@@ -58,11 +58,11 @@ def select_coreset_indices(
     else:
         projected = features
 
-    # 2. Select initial point randomly
+    # 2. Chọn điểm khởi đầu theo seed.
     selected: list[int] = [int(rng.integers(n_samples))]
     min_distances = np.full(n_samples, np.inf, dtype=np.float32)
 
-    # 3. Iteratively pick point maximizing minimum distance to current selected centers
+    # 3. Lặp và chọn điểm có khoảng cách tối thiểu lớn nhất tới tâm đã chọn.
     for _ in range(1, size):
         last_center = projected[selected[-1]]
         dist_sq = np.sum((projected - last_center) ** 2, axis=1)

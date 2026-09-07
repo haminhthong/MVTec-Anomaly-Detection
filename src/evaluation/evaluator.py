@@ -1,10 +1,4 @@
-"""Evaluation Pipeline for industrial visual anomaly detection.
-
-IMPORTANT ANTI-LEAKAGE POLICY:
-# REPORT-ONLY:
-# This module must never modify, retune, or optimize model thresholds.
-# It evaluates frozen artifacts strictly against test samples and ground-truth masks.
-"""
+"""Đánh giá locked MVTec test bằng artifact đã freeze, không retune policy."""
 
 from __future__ import annotations
 
@@ -14,12 +8,38 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from sklearn.metrics import average_precision_score, roc_auc_score
 
-from ..data.manifest import DatasetManifest
-from ..data.validation import validate_mvtec_category
+from ..data.manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
+from ..data.validation import validate_locked_evaluation
 from ..inference.detector import AnomalyDetector
 from ..model.artifacts import ModelArtifact
+from .aupro import compute_aupro
 from .metrics import calculate_3tier_metrics
+
+
+def _safe_metric(function: Any, labels: np.ndarray, values: np.ndarray) -> float | None:
+    """Trả None nếu defect slice không có đủ hai class."""
+    return float(function(labels, values)) if len(np.unique(labels)) > 1 else None
+
+
+def _slice_metrics(
+    selected: np.ndarray,
+    y_true: np.ndarray,
+    scores: np.ndarray,
+    masks: np.ndarray,
+    maps: np.ndarray,
+) -> dict[str, Any]:
+    """Tính image AUROC/AP và localization cho một defect type/area slice."""
+    indices = np.flatnonzero(selected | (y_true == 0))
+    if not len(indices):
+        return {"n": 0, "image_auroc": None, "image_average_precision": None, "aupro_0.3": None}
+    return {
+        "n": int(selected.sum()),
+        "image_auroc": _safe_metric(roc_auc_score, y_true[indices], scores[indices]),
+        "image_average_precision": _safe_metric(average_precision_score, y_true[indices], scores[indices]),
+        "aupro_0.3": compute_aupro(masks[indices], maps[indices]) if np.any(masks[indices]) else None,
+    }
 
 
 def evaluate_category(
@@ -27,175 +47,150 @@ def evaluate_category(
     model_dir: str | Path | ModelArtifact | None = "models",
     data_dir: str | Path = "data/raw",
     output_report: str | Path | None = None,
-    manifest: DatasetManifest | None = None,
+    manifest: DatasetManifest | LockedEvaluationManifest | None = None,
     artifact: ModelArtifact | str | Path | None = None,
+    reopen: bool = False,
 ) -> dict[str, Any]:
-    """Run comprehensive 3-tier evaluation on the test split for a category.
+    """Đánh giá official test locked và tạo defect-type/area slices.
 
-    # REPORT-ONLY:
-    # This function must never modify model thresholds or leak test labels to model building.
-
-    Args:
-        category: Name of product category (or DatasetManifest if passed positionally).
-        model_dir: Path to directory containing model artifacts (or ModelArtifact if passed positionally).
-        data_dir: Path to raw datasets directory.
-        output_report: Path to output JSON file (defaults to reports/<category>/test_metrics.json).
-        manifest: Pre-validated DatasetManifest.
-        artifact: ModelArtifact instance or path to artifact directory.
-
-    Returns:
-        dict[str, Any]: 3-tier metrics dictionary.
+    Nếu report locked đã tồn tại, chạy lại phải truyền ``reopen=True`` để tránh
+    âm thầm thay đổi bằng chứng final.
     """
-    # 1. Resolve manifest and category
     if isinstance(category, DatasetManifest):
-        manifest_obj = category
-        resolved_category = manifest_obj.category
-        if isinstance(model_dir, ModelArtifact):
-            det = AnomalyDetector(model_dir=Path("models") / resolved_category, category=resolved_category)
-        elif model_dir is not None:
-            det = AnomalyDetector(model_dir=model_dir, category=resolved_category)
-        else:
-            det = AnomalyDetector(model_dir="models", category=resolved_category)
+        manifest_obj: DatasetManifest | LockedEvaluationManifest | None = category
+        resolved_category = category.category
     else:
         manifest_obj = manifest
-        # Check artifact
-        if isinstance(artifact, ModelArtifact):
-            cat = category or artifact.metadata.category
-            det = AnomalyDetector(model_dir=model_dir or "models", category=cat)
-        elif artifact is not None:
-            det = AnomalyDetector(model_dir=artifact, category=category)
-        else:
-            det = AnomalyDetector(model_dir=model_dir or "models", category=category)
-        resolved_category = det.category
+        resolved_category = category
 
-    if manifest_obj is None:
-        manifest_obj = validate_mvtec_category(
-            data_dir=data_dir, category=resolved_category
+    if isinstance(manifest_obj, DatasetManifest):
+        resolved_category = manifest_obj.category
+    if isinstance(manifest_obj, NormalReferenceManifest):
+        raise ValueError(
+            "Evaluator cần LockedEvaluationManifest hoặc DatasetManifest có test; "
+            "không được đánh giá bằng manifest reference-only."
         )
+    if resolved_category is None and isinstance(artifact, ModelArtifact):
+        resolved_category = artifact.metadata.category
+    if resolved_category is None:
+        raise ValueError("Cần truyền category hoặc evaluation manifest.")
 
-    image_size = det.preprocessing_config.image_size  # (H, W) dynamically resolved
+    detector = AnomalyDetector(model_dir=model_dir or "models", category=resolved_category)
+    if manifest_obj is None:
+        # Evaluation boundary duy nhất được phép đọc test/masks.
+        manifest_obj = validate_locked_evaluation(data_dir=data_dir, category=resolved_category)
+    if isinstance(manifest_obj, LockedEvaluationManifest) and manifest_obj.category != resolved_category:
+        raise ValueError("Evaluation manifest không khớp category của artifact.")
 
-    ys: list[int] = []
+    report_file = Path(output_report) if output_report else Path("reports") / resolved_category / "test_metrics.json"
+    if report_file.exists() and not reopen:
+        try:
+            previous = json.loads(report_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            previous = {}
+        if previous.get("locked_test"):
+            raise FileExistsError(
+                f"Locked report đã tồn tại tại '{report_file}'. Dùng reopen=True nếu thật sự cần mở lại."
+            )
+
+    target_height, target_width = detector.preprocessing_config.image_size
+    labels: list[int] = []
     scores: list[float] = []
     masks: list[np.ndarray] = []
     maps: list[np.ndarray] = []
+    names: list[str | None] = []
+    area_ratios: list[float] = []
 
-    print(
-        f"\n[EVALUATION] Evaluating frozen PatchCore-style model for '{resolved_category}'..."
-    )
-    print(f"  - Artifact version: {det.model_version}")
-    print(f"  - Calibrated Image Fail Threshold: {det.threshold:.4f} (P99 normal)")
-    print(f"  - Calibrated Review Threshold: {det.review_threshold:.4f} (P95 normal)")
-    print(f"  - Calibrated Pixel Threshold: {det.pixel_threshold:.4f} (P99 normal)")
-
-    h_target, w_target = image_size
-    test_items = manifest_obj.get_all_test_paths()
-
-    for img_path, is_defective, mask_path in test_items:
-        with Image.open(img_path) as img:
-            s, heat = det.score(img)
-
-        ys.append(is_defective)
-        scores.append(s)
-
-        # Process ground-truth mask
-        if is_defective:
+    print(f"\n[EVALUATION] Locked test cho '{resolved_category}' bằng release freeze...")
+    for image_path, is_defect, mask_path, defect_type in manifest_obj.get_all_test_items():
+        with Image.open(image_path) as image:
+            score, heatmap = detector.score(image)
+        if is_defect:
             if mask_path is None or not mask_path.exists():
-                raise FileNotFoundError(
-                    f"Defect test image '{img_path}' is missing its required ground-truth mask."
-                )
-            with Image.open(mask_path) as m_img:
-                mask = (
-                    np.asarray(
-                        m_img.convert("L").resize(
-                            (w_target, h_target), Image.Resampling.NEAREST
-                        )
-                    )
-                    > 0
-                )
+                raise FileNotFoundError(f"Ảnh lỗi '{image_path}' thiếu ground-truth mask.")
+            with Image.open(mask_path) as mask_image:
+                mask = np.asarray(
+                    mask_image.convert("L").resize((target_width, target_height), Image.Resampling.NEAREST)
+                ) > 0
         else:
-            mask = np.zeros((h_target, w_target), dtype=bool)
-
-        # Resize anomaly heatmap to match image target resolution
-        anomaly_map = np.asarray(
-            Image.fromarray(heat.astype(np.float32)).resize(
-                (w_target, h_target), Image.Resampling.BILINEAR
+            mask = np.zeros((target_height, target_width), dtype=bool)
+        resized_map = np.asarray(
+            Image.fromarray(heatmap.astype(np.float32)).resize(
+                (target_width, target_height), Image.Resampling.BILINEAR
             )
         )
-
+        labels.append(is_defect)
+        scores.append(float(score))
         masks.append(mask)
-        maps.append(anomaly_map)
+        maps.append(resized_map)
+        names.append(defect_type)
+        area_ratios.append(float(mask.mean()))
 
-    masks_array = np.asarray(masks)
-    maps_array = np.asarray(maps)
-
-    # 3. Compute 3-tier metrics
-    metrics_result = calculate_3tier_metrics(
-        y_true=ys,
-        scores=scores,
-        masks=masks_array,
-        maps=maps_array,
-        threshold=det.threshold,
-        review_threshold=det.review_threshold,
+    y_arr = np.asarray(labels, dtype=int)
+    score_arr = np.asarray(scores, dtype=np.float32)
+    mask_arr = np.asarray(masks)
+    map_arr = np.asarray(maps)
+    result = calculate_3tier_metrics(
+        y_true=y_arr,
+        scores=score_arr,
+        masks=mask_arr,
+        maps=map_arr,
+        auto_pass_threshold=detector.auto_pass_threshold,
+    )
+    result.update(
+        {
+            "category": resolved_category,
+            "model_version": detector.model_version,
+            "release_id": detector.release_id,
+            "test_samples_total": len(labels),
+            "test_defect_count": int(y_arr.sum()),
+            "test_normal_count": int((y_arr == 0).sum()),
+            "dataset_fingerprint": getattr(manifest_obj, "fingerprint", None),
+            "defect_prevalence_in_benchmark": float(y_arr.mean()) if len(y_arr) else 0.0,
+            "operational_note": "MVTec prevalence khong phai factory prevalence; khong suy ra throughput production.",
+        }
     )
 
-    metrics_result["category"] = resolved_category
-    metrics_result["model_version"] = det.model_version
-    metrics_result["test_samples_total"] = len(ys)
-    metrics_result["test_defect_count"] = sum(ys)
-    metrics_result["test_normal_count"] = len(ys) - sum(ys)
-    if manifest_obj.fingerprint:
-        metrics_result["dataset_fingerprint"] = manifest_obj.fingerprint
-
-    # 4. Save report
-    if output_report is None:
-        report_file = Path("reports") / resolved_category / "test_metrics.json"
-    else:
-        report_file = Path(output_report)
+    defect_types = sorted({name for name in names if name is not None})
+    result["per_defect_type"] = {
+        defect_type: _slice_metrics(
+            np.asarray([name == defect_type for name in names], dtype=bool),
+            y_arr,
+            score_arr,
+            mask_arr,
+            map_arr,
+        )
+        for defect_type in defect_types
+    }
+    area_buckets: list[str | None] = []
+    for label, area in zip(names, area_ratios):
+        if label is None:
+            area_buckets.append(None)
+            continue
+        bucket = "small" if area <= 0.01 else "medium" if area <= 0.10 else "large"
+        area_buckets.append(bucket)
+    result["annotated_defect_area_slices"] = {
+        bucket: {
+            "n": int(sum(value == bucket for value in area_buckets)),
+            "mean_area_ratio": float(
+                np.mean([area_ratios[index] for index, value in enumerate(area_buckets) if value == bucket])
+            ) if any(value == bucket for value in area_buckets) else 0.0,
+            "metrics": _slice_metrics(
+                np.asarray([value == bucket for value in area_buckets], dtype=bool),
+                y_arr,
+                score_arr,
+                mask_arr,
+                map_arr,
+            ),
+        }
+        for bucket in ("small", "medium", "large")
+    }
 
     report_file.parent.mkdir(parents=True, exist_ok=True)
-    report_file.write_text(
-        json.dumps(metrics_result, ensure_ascii=False, indent=2), encoding="utf-8"
+    report_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(
+        f"[OK] Image AUROC={result['detection']['image_auroc']}, "
+        f"AUPRO@0.3={result['localization']['aupro_0.3']}, "
+        f"Defect escape to AUTO_PASS={result['operational_decision']['defect_escape_after_auto_pass']:.4f}"
     )
-
-    # Print summary
-    det_tier = metrics_result["detection"]
-    loc_tier = metrics_result["localization"]
-    op = metrics_result["operational_decision"]
-    cm = op["confusion_matrix"]
-    counts = op["counts"]
-
-    print("\n" + "=" * 68)
-    print(f"      3-TIER EVALUATION REPORT: {resolved_category.upper()}")
-    print("=" * 68)
-    print(" [TIER 1: DETECTION (Image-level Classification)]")
-    print(f"  - Image AUROC                : {det_tier['image_auroc']:.4f}")
-    print(f"  - Image Average Precision    : {det_tier['image_average_precision']:.4f}")
-    print("\n [TIER 2: LOCALIZATION (Pixel-level Segmentation)]")
-    print(f"  - Pixel AUROC                : {loc_tier['pixel_auroc']:.4f}")
-    print(f"  - Pixel Average Precision    : {loc_tier['pixel_average_precision']:.4f}")
-    print(f"  - AUPRO (max_fpr=0.3)        : {loc_tier['aupro_0.3']:.4f}")
-    print("\n [TIER 3: OPERATIONAL QC (Binary Operating Policy at Fail Threshold)]")
-    print(f"  - Calibrated Fail Threshold  : {op['threshold']:.4f}")
-    print(f"  - Accuracy                   : {op['accuracy']:.4f}")
-    print(f"  - Precision                  : {op['precision']:.4f}")
-    print(f"  - Defect Recall (TPR)        : {op['defect_recall']:.4f} (Sensitivity)")
-    print(f"  - Specificity (TNR)          : {op['specificity']:.4f}")
-    print(f"  - F1 Score                   : {op['f1_score']:.4f}")
-    print(f"  - False Reject Rate (FRR)    : {op['false_reject_rate']:.4f} (Scrap waste)")
-    print(f"  - False Accept Rate (FAR)    : {op['false_accept_rate']:.4f} (Customer risk)")
-    print("\n [OPERATIONAL 3-WAY QC WORKFLOW (PASS / REVIEW / FAIL)]")
-    print(f"  - Calibrated Review Threshold: {op['review_threshold']:.4f}")
-    print(f"  - Auto-PASS Rate             : {op['auto_pass_rate']:.4f} ({counts['auto_pass']}/{len(ys)} units)")
-    print(f"  - Manual-REVIEW Rate         : {op['manual_review_rate']:.4f} ({counts['manual_review']}/{len(ys)} units)")
-    print(f"  - Auto-FAIL Rate             : {op['auto_fail_rate']:.4f} ({counts['auto_fail']}/{len(ys)} units)")
-    print(f"  - Defect in Review Rate      : {op['defect_in_review_rate']:.4f} ({counts['defect_in_review']}/{max(1, counts['manual_review'])} units)")
-    print(f"  - Defect Escape after PASS   : {op['defect_escape_after_auto_pass']:.4f} ({counts['defect_escaped']}/{max(1, sum(ys))} defective units)")
-    print(f"  - Clean Pass Rate            : {op['clean_pass_rate']:.4f}")
-    print("\n [CONFUSION MATRIX]")
-    print(f"                 Pred PASS    Pred FAIL")
-    print(f"  Normal (Good):   TN={cm['tn']:<4}      FP={cm['fp']:<4}  (Total: {cm['tn']+cm['fp']})")
-    print(f"  Defect:          FN={cm['fn']:<4}      TP={cm['tp']:<4}  (Total: {cm['tp']+cm['fn']})")
-    print("=" * 68 + "\n")
-
-    return metrics_result
+    return result

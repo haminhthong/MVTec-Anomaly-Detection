@@ -7,7 +7,7 @@ huấn luyện (training) và suy luận (inference).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from torchvision import transforms
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -42,15 +42,10 @@ class PreprocessingConfig:
         )
 
 
-def build_transform(config: PreprocessingConfig | None = None) -> transforms.Compose:
-    """Khởi tạo PyTorch torchvision transforms.Compose từ cấu hình PreprocessingConfig.
+def build_transform(config: PreprocessingConfig | None = None) -> Any:
+    """Tạo transform; chỉ import torchvision khi thật sự chạy feature pipeline."""
+    from torchvision import transforms
 
-    Args:
-        config: Đối tượng PreprocessingConfig (nếu None sẽ dùng cấu hình mặc định).
-
-    Returns:
-        transforms.Compose: Pipeline tiền xử lý hoàn chỉnh (Resize -> ToTensor -> Normalize).
-    """
     cfg = config or PreprocessingConfig()
     return transforms.Compose(
         [
@@ -61,6 +56,15 @@ def build_transform(config: PreprocessingConfig | None = None) -> transforms.Com
     )
 
 
-# Pipeline chuẩn hóa mặc định tương thích ngược
+# Giữ tên cũ nhưng trì hoãn việc khởi tạo torchvision.
 DEFAULT_PREPROCESSING_CONFIG = PreprocessingConfig()
-TFM: transforms.Compose = build_transform(DEFAULT_PREPROCESSING_CONFIG)
+
+
+class _LazyTransform:
+    """Proxy trì hoãn transform mặc định cho Dataset tương thích ngược."""
+
+    def __call__(self, image: Any) -> Any:
+        return build_transform(DEFAULT_PREPROCESSING_CONFIG)(image)
+
+
+TFM = _LazyTransform()

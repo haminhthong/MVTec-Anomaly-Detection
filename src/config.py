@@ -1,15 +1,9 @@
-"""Cấu hình và kiểm soát tham số cho hệ thống kiểm tra lỗi ngoại quan MVTec AD (PatchCore-style).
-
-Module này cung cấp dataclass TrainConfig và PreprocessingConfig để quản lý toàn diện
-các tham số tiền xử lý, kiến trúc backbone, huấn luyện, hiệu chỉnh ngưỡng vận hành kép
-(Dual-threshold calibration: P95 review, P99 fail), phân vị pixel và kích thước coreset memory bank.
-"""
+"""Cấu hình tập trung cho pipeline PatchCore-style normal-only."""
 
 from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
-from collections.abc import Sequence
 
 from .data.transforms import PreprocessingConfig
 
@@ -31,14 +25,12 @@ class TrainConfig:
         feature_layers: Danh sách tên các tầng trích xuất đặc trưng trung gian.
         pretrained: Sử dụng trọng số pretrained ImageNet cho backbone.
         batch_size: Kích thước batch khi trích xuất đặc trưng hình ảnh.
-        calibration_fraction: Tỷ lệ ảnh normal held-out dùng để căn chỉnh threshold.
-        review_quantile: Phân vị normal score dùng làm ngưỡng cảnh báo REVIEW (mặc định: 0.95).
-        threshold_quantile: Phân vị normal score dùng làm ngưỡng lỗi FAIL / Image Threshold (mặc định: 0.99).
+        dev_fraction: Tỷ lệ normal dành cho phát triển và synthetic stress.
+        calibration_fraction: Tỷ lệ normal held-out dùng để khóa AUTO_PASS policy.
+        auto_pass_quantile: Quantile normal-only dùng cho ngưỡng AUTO_PASS.
         pixel_quantile: Phân vị pixel heatmap normal dùng làm Pixel Threshold (mặc định: 0.99).
         min_calibration_samples: Số lượng ảnh calibration tối thiểu yêu cầu (mặc định: 20).
-        coreset_fraction: Tỷ lệ patch trích xuất để tạo coreset đại diện.
-        min_coreset_size: Kích thước tối thiểu của tập patch memory bank coreset.
-        max_coreset_size: Kích thước tối đa của tập patch memory bank coreset.
+        coreset_size: Số patch cụ thể giữ lại trong memory bank.
         smooth_sigma: Độ lệch chuẩn Sigma cho bộ lọc Gaussian Smoothing làm mịn anomaly map.
         preprocessing: Cấu hình tiền xử lý ảnh (PreprocessingConfig).
     """
@@ -49,17 +41,26 @@ class TrainConfig:
     feature_layers: tuple[str, ...] = DEFAULT_FEATURE_LAYERS
     pretrained: bool = True
     batch_size: int = 8
-    calibration_fraction: float = 0.2
-    review_quantile: float = 0.95
-    threshold_quantile: float = 0.99
+    dev_fraction: float = 0.15
+    calibration_fraction: float = 0.15
+    auto_pass_quantile: float = 0.99
     pixel_quantile: float = 0.99
     min_calibration_samples: int = 20
-    coreset_fraction: float = 0.05
-    min_coreset_size: int = 100
-    max_coreset_size: int = 1000
+    coreset_size: int | None = None
     smooth_sigma: float = 1.0
     weights: str | None = None
     scoring_percentile: float = 99.0
+    model_version: str = "1.0.0"
+    pipeline_version: str = "2.0"
+    line_id: str | None = None
+    capture_contract: dict[str, object] = field(default_factory=dict)
+
+    # Các trường dưới đây chỉ để đọc config/CLI cũ; artifact mới không dùng fraction.
+    review_quantile: float | None = None
+    threshold_quantile: float | None = None
+    coreset_fraction: float | None = None
+    min_coreset_size: int | None = None
+    max_coreset_size: int | None = None
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
 
     def validate(self) -> None:
@@ -76,28 +77,64 @@ class TrainConfig:
             raise ValueError("Danh sách feature_layers không được rỗng.")
         if self.batch_size <= 0:
             raise ValueError("Kích thước batch (batch_size) phải lớn hơn 0.")
+        if not 0 <= self.dev_fraction < 0.5:
+            raise ValueError("dev_fraction phải thuộc khoảng [0, 0.5).")
         if not 0 < self.calibration_fraction < 0.5:
             raise ValueError("calibration_fraction phải thuộc khoảng (0, 0.5).")
+        if self.dev_fraction + self.calibration_fraction >= 1.0:
+            raise ValueError("dev_fraction + calibration_fraction phải nhỏ hơn 1.")
         if self.min_calibration_samples < 5:
             raise ValueError(
                 "min_calibration_samples phải >= 5 để đảm bảo ước lượng quantile có ý nghĩa."
             )
-        if not (0.5 <= self.review_quantile < self.threshold_quantile < 1.0):
-            raise ValueError(
-                "review_quantile phải thuộc [0.5, threshold_quantile) và nhỏ hơn threshold_quantile."
-            )
+        if not 0.5 <= self.effective_auto_pass_quantile < 1.0:
+            raise ValueError("auto_pass_quantile phải thuộc khoảng [0.5, 1.0).")
+        if self.review_quantile is not None and self.threshold_quantile is not None:
+            if not (0.5 <= self.review_quantile < self.threshold_quantile < 1.0):
+                raise ValueError(
+                    "review_quantile phải nhỏ hơn threshold_quantile trong config cũ."
+                )
         if not 0.5 <= self.pixel_quantile < 1.0:
             raise ValueError("pixel_quantile phải thuộc khoảng [0.5, 1.0).")
-        if not 0 < self.coreset_fraction <= 1:
-            raise ValueError("coreset_fraction phải thuộc khoảng (0, 1].")
-        if not 1 <= self.min_coreset_size <= self.max_coreset_size:
-            raise ValueError(
-                "Kích thước coreset tối thiểu/tối đa không hợp lệ (min phải <= max và min >= 1)."
-            )
+        if self.coreset_size is not None and self.coreset_size <= 0:
+            raise ValueError("coreset_size phải là số nguyên dương.")
+        if self.coreset_fraction is not None and not 0 < self.coreset_fraction <= 1:
+            raise ValueError("coreset_fraction cũ phải thuộc khoảng (0, 1].")
+        if self.min_coreset_size is not None and self.min_coreset_size <= 0:
+            raise ValueError("min_coreset_size cũ phải lớn hơn 0.")
+        if self.max_coreset_size is not None and self.max_coreset_size <= 0:
+            raise ValueError("max_coreset_size cũ phải lớn hơn 0.")
+        if (
+            self.min_coreset_size is not None
+            and self.max_coreset_size is not None
+            and self.min_coreset_size > self.max_coreset_size
+        ):
+            raise ValueError("Kích thước coreset cũ: min phải <= max.")
         if self.smooth_sigma < 0:
             raise ValueError("smooth_sigma không được âm.")
         if not 50.0 <= self.scoring_percentile <= 100.0:
             raise ValueError("scoring_percentile phải thuộc khoảng [50.0, 100.0].")
+
+    @property
+    def effective_auto_pass_quantile(self) -> float:
+        """Lấy quantile policy mới, ưu tiên tên cũ khi đọc config legacy."""
+        return self.threshold_quantile if self.threshold_quantile is not None else self.auto_pass_quantile
+
+    def resolved_coreset_size(self, full_memory_size: int) -> int:
+        """Tính K rõ ràng; fraction chỉ được hỗ trợ tạm thời khi đọc config cũ."""
+        if full_memory_size <= 0:
+            raise ValueError("full_memory_size phải lớn hơn 0.")
+        if self.coreset_size is not None:
+            return min(self.coreset_size, full_memory_size)
+        if self.coreset_fraction is not None:
+            # Tương thích CLI cũ, nhưng không ghi fraction vào artifact mới.
+            target = max(1, int(self.coreset_fraction * full_memory_size))
+            if self.min_coreset_size is not None:
+                target = max(target, self.min_coreset_size)
+            if self.max_coreset_size is not None:
+                target = min(target, self.max_coreset_size)
+            return min(target, full_memory_size)
+        return min(1000, full_memory_size)
 
 
 def parse_args() -> TrainConfig:
@@ -147,24 +184,9 @@ def parse_args() -> TrainConfig:
     parser.add_argument(
         "--batch-size", type=int, default=8, help="Kích thước batch cho DataLoader"
     )
-    parser.add_argument(
-        "--calibration-fraction",
-        type=float,
-        default=0.2,
-        help="Tỷ lệ ảnh normal giữ riêng cho calibration",
-    )
-    parser.add_argument(
-        "--review-quantile",
-        type=float,
-        default=0.95,
-        help="Phân vị score normal dùng làm review_threshold",
-    )
-    parser.add_argument(
-        "--threshold-quantile",
-        type=float,
-        default=0.99,
-        help="Phân vị score normal dùng làm fail_threshold (image_threshold)",
-    )
+    parser.add_argument("--dev-fraction", type=float, default=0.15, help="Tỷ lệ normal dành cho Dev")
+    parser.add_argument("--calibration-fraction", type=float, default=0.15, help="Tỷ lệ normal dành cho calibration")
+    parser.add_argument("--auto-pass-quantile", type=float, default=0.99, help="Quantile normal cho ngưỡng AUTO_PASS")
     parser.add_argument(
         "--pixel-quantile",
         type=float,
@@ -177,24 +199,8 @@ def parse_args() -> TrainConfig:
         default=20,
         help="Số lượng ảnh calibration tối thiểu yêu cầu",
     )
-    parser.add_argument(
-        "--coreset-fraction",
-        type=float,
-        default=0.05,
-        help="Tỷ lệ mẫu patch giữ lại qua coreset",
-    )
-    parser.add_argument(
-        "--min-coreset-size",
-        type=int,
-        default=100,
-        help="Kích thước tối thiểu của coreset memory bank",
-    )
-    parser.add_argument(
-        "--max-coreset-size",
-        type=int,
-        default=1000,
-        help="Kích thước tối đa của coreset memory bank",
-    )
+    parser.add_argument("--coreset-size", type=int, default=None, help="Số patch giữ lại trong memory bank")
+    parser.add_argument("--model-version", default="1.0.0", help="Version release; không overwrite version đã tồn tại")
     parser.add_argument(
         "--smooth-sigma",
         type=float,
@@ -217,14 +223,13 @@ def parse_args() -> TrainConfig:
         feature_layers=tuple(args.feature_layers),
         pretrained=args.pretrained,
         batch_size=args.batch_size,
+        dev_fraction=args.dev_fraction,
         calibration_fraction=args.calibration_fraction,
-        review_quantile=args.review_quantile,
-        threshold_quantile=args.threshold_quantile,
+        auto_pass_quantile=args.auto_pass_quantile,
         pixel_quantile=args.pixel_quantile,
         min_calibration_samples=args.min_calibration_samples,
-        coreset_fraction=args.coreset_fraction,
-        min_coreset_size=args.min_coreset_size,
-        max_coreset_size=args.max_coreset_size,
+        coreset_size=args.coreset_size,
+        model_version=args.model_version,
         smooth_sigma=args.smooth_sigma,
         scoring_percentile=args.scoring_percentile,
     )

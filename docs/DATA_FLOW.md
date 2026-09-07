@@ -8,8 +8,8 @@ This document details the transformation of data tensors, representations, and c
 
 ```
 Input Normal Training Images (N images, e.g., 209 images for bottle)
-       ↓  (split_normal_paths, 80% / 20%, seed=42)
-Memory Set: 167 images                     Calibration Set: 42 images
+       ↓  (Reference / Dev / Calibration split, seed=42)
+Reference Set                         Dev Set + Calibration Set
        ↓                                                 ↓
 Resize to config.preprocessing.image_size (224x224)       ↓ (same preprocessing)
 ToTensor + ImageNet Normalize                            ↓
@@ -27,7 +27,7 @@ Accumulated Full Memory: [130,928 patches, 384D]         ↓
 Random Projection (Johnson-Lindenstrauss)               ↓
 Projected features: [130,928, 64D]                       ↓
        ↓                                                 ↓
-Greedy K-Center Selection (coreset_fraction=0.05, K=1,000)
+Greedy K-Center Selection (coreset_size=1,000)
        ↓                                                 ↓
 Selected Indices: [1,000 integers]                       ↓
        ↓                                                 ↓
@@ -43,11 +43,10 @@ For each calibration image:
   - Image score: 99th percentile of smoothed heatmap
        ↓
 Compute ThresholdPolicy:
-  - review_threshold = Quantile(normal_scores, 0.95)  -> ~2.6130
-  - fail_threshold   = Quantile(normal_scores, 0.99)  -> ~2.8442
-  - pixel_threshold  = Quantile(all_normal_pixels, 0.99) -> ~2.5079
+  - auto_pass_threshold = Quantile(normal_scores, 0.99)  (heuristic normal-only)
+  - pixel_threshold     = Quantile(all_normal_pixels, 0.99)
        ↓
-Serialize to models/<category>/:
+Serialize to models/releases/<category>-v<version>/:
   - config.json (ModelArtifact metadata, ThresholdPolicy, PreprocessingConfig)
   - memory_bank.npy ([1000, 384] float32 array)
   - split_manifest.json (reproducible file lists and hashes)
@@ -81,12 +80,13 @@ Image Scoring & Defect Localization:
 - peak_score = Max(smoothed_heatmap)
 - anomalous_area_ratio = Count(smoothed_heatmap >= pixel_threshold) / Total_Pixels
        ↓
+Capture Quality Gate:
+- Invalid resolution / blur / exposure / ROI -> decision = "RECAPTURE_REQUIRED"
+       ↓
 Operational Decision Engine (ThresholdPolicy):
-- If anomaly_score < review_threshold:  decision = "PASS", severity = "PASS"
-- Else if anomaly_score < fail_threshold: decision = "REVIEW", severity = "REVIEW"
-- Else: decision = "FAIL"
-    - If area_ratio >= 0.05 or peak_score >= 1.5 * fail_threshold: severity = "FAIL_MAJOR"
-    - Else: severity = "FAIL_MINOR"
+- If anomaly_score < auto_pass_threshold: decision = "AUTO_PASS"
+- Else: decision = "HUMAN_REVIEW"
+- area_ratio và peak_score chỉ là evidence, không phải severity major/minor.
        ↓
 Visualization (Optional):
 - Jet-like colormap generation & alpha blending on resized input -> Base64 PNG data URI

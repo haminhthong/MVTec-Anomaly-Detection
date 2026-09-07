@@ -1,12 +1,10 @@
-"""Download MVTec AD category datasets from Hugging Face mirror.
-
-MVTec AD is licensed under CC BY-NC-SA 4.0 (Non-Commercial).
-Mirror repository preserves the official directory structure.
-"""
+"""Tải category MVTec AD và lưu provenance nguồn dữ liệu."""
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
@@ -33,7 +31,7 @@ ALL_CATEGORIES = [
 
 
 def download_category(category: str, output_dir: Path) -> None:
-    """Download specific category pattern."""
+    """Tải một category và ghi metadata nguồn dữ liệu ở thư mục raw."""
     print(f"Downloading MVTec AD category '{category}' into '{output_dir}'...")
     snapshot_download(
         repo_id=DATASET,
@@ -41,6 +39,15 @@ def download_category(category: str, output_dir: Path) -> None:
         allow_patterns=[f"{category}/**"],
         local_dir=output_dir,
     )
+    metadata_path = output_dir / "DATASET_SOURCE.json"
+    metadata = {
+        "source": "Hugging Face mirror foersben/mvtec-ad",
+        "source_version": DATASET,
+        "download_date": datetime.now(timezone.utc).isoformat(),
+        "license": "CC BY-NC-SA 4.0",
+        "archive_sha256": None,
+    }
+    metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Successfully downloaded '{category}'.")
 
 

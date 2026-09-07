@@ -1,10 +1,4 @@
-"""HTTP REST API Server for Industrial Visual Anomaly Detection (FastAPI Enterprise).
-
-Adheres to strict architectural separation:
-- API layer handles HTTP transport, validation, error mapping, and serialization ONLY.
-- ALL ML logic, feature extraction, nearest neighbors, and thresholding are delegated to AnomalyDetector.
-- Strict category lookup with ModelNotFoundError mapped directly to HTTP 404.
-"""
+"""FastAPI transport cho inspection công nghiệp; ML logic nằm trong detector."""
 
 from __future__ import annotations
 
@@ -38,6 +32,27 @@ app = FastAPI(
 )
 
 registry = ModelRegistry(base_dir=MODEL_DIR)
+
+
+def _resolve_request_category(category: str | None, line_id: str | None) -> str:
+    """Resolve model rõ ràng; tuyệt đối không chọn category đầu tiên."""
+    if line_id:
+        try:
+            mapped_category = registry.resolve_line(line_id)
+        except (ModelNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if category and category != mapped_category:
+            raise HTTPException(
+                status_code=409,
+                detail=f"category '{category}' không khớp line_id '{line_id}'.",
+            )
+        return mapped_category
+    if category and category.strip():
+        return category.strip()
+    raise HTTPException(
+        status_code=422,
+        detail="Phải truyền category rõ ràng hoặc line_id đã đăng ký; không có fallback model.",
+    )
 
 
 def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
@@ -122,14 +137,18 @@ def get_model_details(category: str) -> dict[str, Any]:
         return registry.get_metadata(category)
     except ModelNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=f"Model release không sẵn sàng: {exc}") from exc
 
 
 @app.post("/inspect", response_model=InspectionResponse, tags=["Inspection"])
 async def inspect(
     file: Annotated[UploadFile, File(..., description="Product image file (PNG/JPG)")],
     category: Annotated[
-        str | None, Query(description="Product category (e.g. 'bottle'). If omitted, first available model is used")
+        str | None, Query(description="Category explicit; không có fallback")
     ] = None,
+    line_id: Annotated[str | None, Query(description="Production line đã map server-side tới release")] = None,
+    camera_id: Annotated[str | None, Query(description="Camera identifier")] = None,
     include_overlay: Annotated[
         bool, Form(description="Whether to include Base64 heatmap overlay string")
     ] = True,
@@ -138,27 +157,31 @@ async def inspect(
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     image = _validate_and_load_image(content)
 
-    target_category = category
-    if not target_category:
-        available = registry.list_categories()
-        if not available:
-            raise HTTPException(status_code=503, detail="No models loaded.")
-        target_category = available[0]
+    target_category = _resolve_request_category(category, line_id)
 
     try:
-        detector = registry.get_detector(target_category)
-        result = detector.inspect(image, include_overlay=include_overlay)
+        detector = registry.get_detector(target_category, line_id=line_id)
+        result = detector.inspect(
+            image,
+            include_overlay=include_overlay,
+            line_id=line_id,
+            camera_id=camera_id,
+        )
         return InspectionResponse(**result)
     except ModelNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=f"Model release không sẵn sàng: {exc}") from exc
 
 
 @app.post("/inspect/batch", response_model=BatchInspectionResponse, tags=["Inspection"])
 async def inspect_batch(
     files: Annotated[list[UploadFile], File(..., description="Multiple product image files")],
     category: Annotated[
-        str | None, Query(description="Product category. If omitted, first available is used")
+        str | None, Query(description="Category explicit; không có fallback")
     ] = None,
+    line_id: Annotated[str | None, Query(description="Production line đã map server-side tới release")] = None,
+    camera_id: Annotated[str | None, Query(description="Camera identifier")] = None,
     include_overlay: Annotated[
         bool, Form(description="Whether to include Base64 heatmap overlay string")
     ] = False,
@@ -177,16 +200,16 @@ async def inspect_batch(
         raw_bytes = await f.read(MAX_UPLOAD_BYTES + 1)
         images.append(_validate_and_load_image(raw_bytes))
 
-    target_category = category
-    if not target_category:
-        available = registry.list_categories()
-        if not available:
-            raise HTTPException(status_code=503, detail="No models loaded.")
-        target_category = available[0]
+    target_category = _resolve_request_category(category, line_id)
 
     try:
-        detector = registry.get_detector(target_category)
-        results = detector.inspect_batch(images, include_overlay=include_overlay)
+        detector = registry.get_detector(target_category, line_id=line_id)
+        results = detector.inspect_batch(
+            images,
+            include_overlay=include_overlay,
+            line_id=line_id,
+            camera_id=camera_id,
+        )
         items = [InspectionResponse(**r) for r in results]
         return BatchInspectionResponse(
             batch_size=len(items),
@@ -195,3 +218,5 @@ async def inspect_batch(
         )
     except ModelNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=f"Model release không sẵn sàng: {exc}") from exc

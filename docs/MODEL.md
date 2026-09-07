@@ -73,30 +73,35 @@ $$d(p) = \min_{m \in \mathcal{M}_C} \|p - m\|_2$$
 
 ---
 
-## 7. Operational Policy: Why P95 / P99?
+## 7. Operational Policy: Normal-only AUTO_PASS
 
-In an industrial setting, defect labels do not exist during model building.
-- **Operating Policy**:
-  - `review_threshold = Quantile(normal_scores, 0.95)`: 5% of normal parts are routed to human review (buffer zone).
-  - `fail_threshold = Quantile(normal_scores, 0.99)`: 1% false reject ceiling under nominal calibration.
-  - `pixel_threshold = Quantile(all_normal_heatmap_pixels, 0.99)`: Masks out normal background variations.
-- **Important Distinction**: These thresholds are calibrated operational guidelines under the assumption of normal distributions. In production deployments, thresholds are tuned based on business trade-offs between scrap cost (False Reject Rate - FRR) and customer escape risk (False Accept Rate - FAR).
+Trong lúc build model chỉ có normal reference, vì vậy V1 chỉ khóa:
+- `auto_pass_threshold = Quantile(normal_scores, 0.99)`.
+- `pixel_threshold = Quantile(all_normal_heatmap_pixels, 0.99)`.
+- score dưới ngưỡng → `AUTO_PASS`; score còn lại → `HUMAN_REVIEW`.
+
+P99 trên cohort calibration nhỏ là heuristic normal-only upper-tail threshold,
+không phải cam kết false-reject rate production là 1%. V1 không suy ra
+`FAIL_MINOR` hay `FAIL_MAJOR`; mọi ảnh vượt AUTO_PASS đều chuyển HUMAN_REVIEW để
+QC quyết định `QC_PASS` hoặc `QC_REJECT`.
 
 ---
 
 ## 8. Ablation Studies
 
-### Coreset Fraction vs. Accuracy & Efficiency (Category: `bottle`)
+### Explicit Coreset Size (Category: `bottle`)
 
-| Coreset Fraction | Patches ($K$) | RAM Footprint | Inference Latency (Batch=1) | Image AUROC | Pixel AUROC | AUPRO@0.3 |
+| Coreset Size ($K$) | RAM Footprint | Inference Latency (Batch=1) | Image AUROC | Pixel AUROC | AUPRO@0.3 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **100% (Full)** | 130,928 | 191.3 MB | 1,120 ms | 1.0000 | 0.9825 | 0.9422 |
-| **20%** | 4,000 | 5.86 MB | 260 ms | 1.0000 | 0.9821 | 0.9416 |
-| **10%** | 2,000 | 2.93 MB | 185 ms | 1.0000 | 0.9819 | 0.9412 |
-| **5% (Default)** | **1,000** | **1.46 MB** | **145 ms** | **1.0000** | **0.9818** | **0.9410** |
-| **1%** | 200 | 0.29 MB | 88 ms | 0.9940 | 0.9760 | 0.9280 |
+| **130,928 (full)** | 191.3 MB | 1,120 ms | 1.0000 | 0.9825 | 0.9422 |
+| **4,000** | 5.86 MB | 260 ms | 1.0000 | 0.9821 | 0.9416 |
+| **2,000** | 2.93 MB | 185 ms | 1.0000 | 0.9819 | 0.9412 |
+| **1,000 (engineering baseline)** | **1.46 MB** | **145 ms** | **1.0000** | **0.9818** | **0.9410** |
+| **200** | 0.29 MB | 88 ms | 0.9940 | 0.9760 | 0.9280 |
 
-**Finding**: Reducing the memory bank from 130,928 patches to 1,000 patches (5% fraction capped at 1,000) achieves an **8x speedup** and **130x RAM reduction** with virtually zero degradation in detection AUROC (1.0000) and localization AUPRO (0.9410 vs 0.9422).
+Các con số trên là historical benchmark cần được tái chạy bằng Dev-only ablation
+trước khi chọn release. `coreset_size=1000` là engineering baseline, không phải
+claim champion được chọn bằng official Test.
 
 ### Layer Ablation (Category: `bottle`)
 

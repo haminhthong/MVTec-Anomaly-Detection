@@ -2,27 +2,38 @@
 
 from __future__ import annotations
 
-from .dataset import ImageFolderDataset, find_category_root
-from .transforms import (
-    DEFAULT_PREPROCESSING_CONFIG,
-    TFM,
-    PreprocessingConfig,
-    build_transform,
-)
-from .manifest import DatasetManifest
+from .manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
 from .validation import (
     DatasetValidationError,
+    validate_locked_evaluation,
     validate_mvtec_category,
+    validate_reference_category,
 )
 
 __all__ = [
-    "ImageFolderDataset",
-    "find_category_root",
-    "PreprocessingConfig",
-    "build_transform",
-    "DEFAULT_PREPROCESSING_CONFIG",
-    "TFM",
     "DatasetManifest",
+    "NormalReferenceManifest",
+    "LockedEvaluationManifest",
     "DatasetValidationError",
     "validate_mvtec_category",
+    "validate_reference_category",
+    "validate_locked_evaluation",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import phần phụ thuộc torch để manifest/hash vẫn dùng được offline."""
+    if name in {"ImageFolderDataset", "find_category_root"}:
+        from .dataset import ImageFolderDataset, find_category_root
+
+        return {"ImageFolderDataset": ImageFolderDataset, "find_category_root": find_category_root}[name]
+    if name in {"PreprocessingConfig", "build_transform", "DEFAULT_PREPROCESSING_CONFIG", "TFM"}:
+        from .transforms import DEFAULT_PREPROCESSING_CONFIG, TFM, PreprocessingConfig, build_transform
+
+        return {
+            "PreprocessingConfig": PreprocessingConfig,
+            "build_transform": build_transform,
+            "DEFAULT_PREPROCESSING_CONFIG": DEFAULT_PREPROCESSING_CONFIG,
+            "TFM": TFM,
+        }[name]
+    raise AttributeError(name)

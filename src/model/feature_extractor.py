@@ -40,7 +40,7 @@ class FeatureExtractor(nn.Module):
         self.backbone_name: str = backbone
         self.pretrained: bool = pretrained
 
-        # Resolve backbone spec if available
+        # Resolve thông số backbone nếu có trong registry.
         try:
             spec = get_backbone_spec(backbone)
             default_layers = spec.default_layers
@@ -52,7 +52,7 @@ class FeatureExtractor(nn.Module):
 
         self.layers: tuple[str, ...] = tuple(layers) if layers is not None else default_layers
 
-        # Load backbone
+        # Khởi tạo backbone.
         if not hasattr(models, backbone):
             raise ValueError(f"Backbone '{backbone}' is not supported by torchvision.models.")
 
@@ -80,12 +80,12 @@ class FeatureExtractor(nn.Module):
 
         self.model: nn.Module = getattr(models, backbone)(weights=resolved_weights)
 
-        # Freeze all parameters
+        # Đóng băng toàn bộ tham số.
         self.eval()
         for param in self.model.parameters():
             param.requires_grad = False
 
-        # Register forward hooks on target layers
+        # Đăng ký forward hook trên các layer mục tiêu.
         self._feature_maps: dict[str, torch.Tensor] = {}
         self._hooks: list[Any] = []
         named_modules = dict(self.model.named_modules())
@@ -137,7 +137,7 @@ class FeatureExtractor(nn.Module):
         extracted_maps = [self._feature_maps[layer_name] for layer_name in self.layers]
         target_shape = extracted_maps[0].shape[2:]  # (H, W) of the first feature layer
 
-        # Bilinear interpolation upsampling to align spatial dimensions
+        # Nội suy song tuyến để căn chỉnh kích thước không gian.
         aligned_maps: list[torch.Tensor] = []
         for feat in extracted_maps:
             if feat.shape[2:] != target_shape:
@@ -148,6 +148,6 @@ class FeatureExtractor(nn.Module):
 
         combined = torch.cat(aligned_maps, dim=1)
         b, c, h, w = combined.shape
-        # Permute [B, C, H, W] -> [B, H, W, C] -> [-1, C]
+        # Đổi trục [B, C, H, W] -> [B, H, W, C] -> [-1, C].
         patches = combined.permute(0, 2, 3, 1).reshape(-1, c)
         return patches, (h, w)

@@ -1,10 +1,4 @@
-"""ModelRegistry managing multi-category model resolution, caching, and lifecycle.
-
-Enforces strict category isolation:
-- Models are strictly scoped under models/<category>/
-- NO cross-category fallback (e.g. asking for 'cable' will never load 'bottle')
-- Raises ModelNotFoundError if the requested category is not trained
-"""
+"""Registry resolve release theo category/line, không fallback chéo category."""
 
 from __future__ import annotations
 
@@ -19,27 +13,26 @@ if TYPE_CHECKING:
 
 
 class ModelRegistry:
-    """Registry managing model discovery, resolution, and caching per category.
-
-    Attributes:
-        base_dir: Root directory containing category-scoped model artifacts.
-        _cached_detectors: In-memory cache of instantiated AnomalyDetector objects.
-    """
+    """Quản lý discovery, resolve và cache detector theo category."""
 
     def __init__(self, base_dir: str | Path = "models") -> None:
         self.base_dir: Path = Path(base_dir)
         self._cached_detectors: dict[str, AnomalyDetector] = {}
 
     def list_categories(self) -> list[str]:
-        """List all category names with valid, trained model artifacts.
-
-        Returns:
-            list[str]: Alphabetically sorted list of available category names.
-        """
+        """Liệt kê category có artifact hợp lệ hoặc có production pointer."""
         if not self.base_dir.exists():
             return []
 
         categories: set[str] = set()
+        production_path = self.base_dir / "production.json"
+        if production_path.exists():
+            try:
+                production = json.loads(production_path.read_text(encoding="utf-8"))
+                categories.update(production.get("categories", {}).keys())
+            except (OSError, json.JSONDecodeError):
+                # Resolve cụ thể sẽ báo lỗi rõ hơn; list không làm service crash.
+                pass
         for p in self.base_dir.iterdir():
             if p.is_dir() and not p.name.startswith((".", "_")):
                 cfg = p / "config.json"
@@ -50,60 +43,76 @@ class ModelRegistry:
 
         return sorted(categories)
 
+    def resolve_line_target(self, line_id: str) -> tuple[str, str | None]:
+        """Resolve line thành category và release_id đã đăng ký."""
+        if not line_id or not line_id.strip():
+            raise ValueError("line_id không được để trống.")
+        pointer_path = self.base_dir / "production.json"
+        if not pointer_path.exists():
+            raise ModelNotFoundError(f"Chưa cấu hình line_id '{line_id}'.")
+        try:
+            data = json.loads(pointer_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ModelNotFoundError(f"production.json không hợp lệ: {exc}") from exc
+        entry = data.get("lines", {}).get(line_id)
+        if isinstance(entry, str):
+            return entry, None
+        if isinstance(entry, dict) and entry.get("category"):
+            release_id = entry.get("release_id")
+            return str(entry["category"]), str(release_id) if release_id else None
+        raise ModelNotFoundError(f"Không có mapping cho line_id '{line_id}'.")
+
+    def resolve_line(self, line_id: str) -> str:
+        """Resolve line_id server-side và trả về category của line."""
+        return self.resolve_line_target(line_id)[0]
+
     def resolve_category_dir(self, category: str) -> Path:
-        """Resolve and strictly validate the artifact directory for a category.
-
-        Args:
-            category: Name of product category (e.g. 'bottle').
-
-        Returns:
-            Path: Path to models/<category> directory.
-
-        Raises:
-            ModelNotFoundError: If the category directory or required artifacts do not exist.
-        """
+        """Resolve và kiểm tra release artifact của một category."""
         return resolve_artifact_dir(model_root=self.base_dir, category=category)
 
     def get_metadata(self, category: str) -> dict[str, Any]:
-        """Read config.json metadata for a specific category.
-
-        Args:
-            category: Name of product category.
-
-        Returns:
-            dict[str, Any]: Configuration dictionary.
-        """
+        """Đọc config.json của release đang được trỏ cho category."""
         cat_dir = self.resolve_category_dir(category)
         cfg_path = cat_dir / "config.json"
         return json.loads(cfg_path.read_text(encoding="utf-8"))
 
     def version(self, category: str) -> str:
-        """Get model version string for category."""
+        """Lấy model_version từ metadata nested của release."""
         try:
             meta = self.get_metadata(category)
-            return str(meta.get("model_version", meta.get("version", "unknown")))
+            model_meta = meta.get("model", {})
+            version = model_meta.get("model_version", meta.get("model_version", meta.get("version", "unknown")))
+            return str(version)
         except ModelNotFoundError:
             return "not_trained"
 
-    def get_detector(self, category: str) -> AnomalyDetector:
-        """Retrieve AnomalyDetector instance for category (using cached instance if available).
+    def get_detector(self, category: str, line_id: str | None = None) -> AnomalyDetector:
+        """Lấy detector đúng release, tự làm mới cache khi production pointer đổi."""
+        target_dir = self.resolve_category_dir(category)
+        cache_key = category
+        if line_id:
+            mapped_category, release_id = self.resolve_line_target(line_id)
+            if mapped_category != category:
+                raise ValueError(f"line_id '{line_id}' không map tới category '{category}'.")
+            if release_id:
+                release_dir = self.base_dir / "releases" / release_id
+                target_dir = resolve_artifact_dir(model_root=release_dir)
+                cache_key = f"line:{line_id}:{release_id}"
 
-        Args:
-            category: Name of product category.
-
-        Returns:
-            AnomalyDetector: Instantiated detector.
-        """
-        if category in self._cached_detectors:
-            return self._cached_detectors[category]
+        cached = self._cached_detectors.get(cache_key)
+        if cached is not None and Path(cached.model_dir).resolve() == target_dir.resolve():
+            return cached
 
         from ..inference.detector import AnomalyDetector
 
-        cat_dir = self.resolve_category_dir(category)
-        detector = AnomalyDetector(model_dir=cat_dir, category=category)
-        self._cached_detectors[category] = detector
+        if line_id and cache_key.startswith("line:"):
+            detector = AnomalyDetector(model_dir=target_dir)
+        else:
+            # Truyền base_dir để resolver lại production pointer đúng category.
+            detector = AnomalyDetector(model_dir=self.base_dir, category=category)
+        self._cached_detectors[cache_key] = detector
         return detector
 
     def clear_cache(self) -> None:
-        """Clear cached detector instances."""
+        """Xóa cache detector để nạp lại production release."""
         self._cached_detectors.clear()

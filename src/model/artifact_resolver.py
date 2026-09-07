@@ -1,12 +1,4 @@
-"""Artifact Resolver enforcing strict category isolation and validation.
-
-Eliminates loose fallback behavior:
-- Target category must be explicitly requested and non-empty.
-- Artifacts must reside in <model_root>/<category>/
-- config.json must exist and its recorded category must match requested category exactly.
-- memory_bank.npy (or legacy memory.npy) must exist.
-- Never falls back to root directory or unrelated categories.
-"""
+"""Resolve artifact nghiêm ngặt theo category, production pointer và integrity cơ bản."""
 
 from __future__ import annotations
 
@@ -16,32 +8,19 @@ from typing import Any
 
 
 class ModelNotFoundError(FileNotFoundError):
-    """Raised when model artifacts for a requested category cannot be found or are invalid."""
+    """Artifact category không tồn tại hoặc không hợp lệ."""
 
 
 def resolve_artifact_dir(
     model_root: str | Path = "models",
     category: str | None = None,
 ) -> Path:
-    """Resolve and strictly validate the artifact directory for a category.
-
-    Args:
-        model_root: Base models directory (e.g. 'models') or specific category folder.
-        category: Name of product category (e.g. 'bottle').
-
-    Returns:
-        Path: Validated path to category artifact directory.
-
-    Raises:
-        ValueError: If category name is empty or invalid.
-        ModelNotFoundError: If artifact directory, config.json, or memory bank is missing,
-            or if config.json category does not match requested category.
-    """
+    """Resolve và kiểm tra config/memory bank của đúng category."""
     root_path = Path(model_root)
 
-    # If root_path itself is the category dir (e.g. models/bottle)
+    # Nếu root_path đã là thư mục category (ví dụ models/bottle).
     if category is None or not category.strip():
-        # Check if root_path itself is a valid category dir
+        # Kiểm tra root_path có phải artifact category hợp lệ không.
         cfg_file = root_path / "config.json"
         if not cfg_file.exists():
             raise ValueError(
@@ -61,8 +40,24 @@ def resolve_artifact_dir(
         cat_dir = root_path
     else:
         category = category.strip()
-        # Direct category folder check
-        if root_path.name == category and (root_path / "config.json").exists():
+        # Production pointer ưu tiên release immutable thay vì alias mutable.
+        production_path = root_path / "production.json"
+        pointed_dir: Path | None = None
+        if production_path.exists():
+            try:
+                production = json.loads(production_path.read_text(encoding="utf-8"))
+                pointer = production.get("categories", {}).get(category)
+                if isinstance(pointer, dict):
+                    pointer = pointer.get("path") or pointer.get("release")
+                if pointer:
+                    pointed_dir = root_path / str(pointer)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ModelNotFoundError(f"production.json không hợp lệ: {exc}") from exc
+
+        if pointed_dir is not None and (pointed_dir / "config.json").exists():
+            cat_dir = pointed_dir
+        # Nếu không có pointer thì kiểm tra thư mục category trực tiếp.
+        elif root_path.name == category and (root_path / "config.json").exists():
             cat_dir = root_path
         else:
             cat_dir = root_path / category
@@ -73,7 +68,7 @@ def resolve_artifact_dir(
             "No cross-category or root fallback is permitted."
         )
 
-    # 1. Verify config.json
+    # 1. Kiểm tra config.json.
     config_path = cat_dir / "config.json"
     if not config_path.exists():
         raise ModelNotFoundError(
@@ -94,7 +89,7 @@ def resolve_artifact_dir(
             f"but config specifies '{recorded_cat}'."
         )
 
-    # 2. Verify memory bank array
+    # 2. Kiểm tra file memory bank.
     memory_path = cat_dir / "memory_bank.npy"
     legacy_path = cat_dir / "memory.npy"
     if not memory_path.exists() and not legacy_path.exists():

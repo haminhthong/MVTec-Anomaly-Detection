@@ -53,11 +53,11 @@ def benchmark_category(
     if not pil_images:
         raise ValueError(f"No sample images found for category '{category}'.")
 
-    # Repeat samples if needed
+    # Lặp lại mẫu nếu số lượng ảnh chưa đủ.
     while len(pil_images) < max(batch_sizes):
         pil_images.extend(pil_images[:max(batch_sizes) - len(pil_images)])
 
-    # Memory Bank Footprint
+    # Dung lượng memory bank.
     bank_size_patches = detector.memory_bank.size
     bank_dim = detector.memory_bank.dim
     bank_ram_mb = (bank_size_patches * bank_dim * 4) / (1024 * 1024)
@@ -72,11 +72,11 @@ def benchmark_category(
     print(f"Benchmark iterations : {num_runs}")
     print("-" * 70)
 
-    # 1. Warmup
+    # 1. Chạy warmup.
     for _ in range(num_warmup):
         _ = detector.score(pil_images[0])
 
-    # 2. Single-image Latency (Batch = 1)
+    # 2. Đo độ trễ một ảnh (batch = 1).
     single_latencies: list[float] = []
     for _ in range(num_runs):
         t0 = time.perf_counter()
@@ -97,7 +97,7 @@ def benchmark_category(
     print(f"  - Min / Max        : {min_lat:6.2f} ms / {max_lat:6.2f} ms")
     print(f"  - Throughput       : {throughput_single:6.2f} images/second")
 
-    # 3. Batch Inspection Benchmark
+    # 3. Benchmark inspection theo batch.
     batch_results: dict[int, dict] = {}
     print("\n[BATCH INFERENCE THROUGHPUT]")
     print("  Batch Size | Latency/Batch (ms) | Latency/Image (ms) | Throughput (FPS)")
@@ -105,7 +105,7 @@ def benchmark_category(
 
     for b in batch_sizes:
         batch_imgs = pil_images[:b]
-        # Warmup batch
+        # Warmup batch.
         _ = detector.inspect_batch(batch_imgs, include_overlay=False)
 
         batch_times: list[float] = []

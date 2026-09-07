@@ -1,5 +1,10 @@
 # Báo Cáo Nghiên Cứu & Nâng Cấp Kiến Trúc (Research & Improvement Report)
 
+> **Phạm vi:** Đây là báo cáo nghiên cứu/lịch sử của các phiên bản trước. Contract
+> runtime hiện tại được định nghĩa trong `README.md` và `docs/`: model normal-only,
+> release immutable, V1 chỉ `AUTO_PASS` hoặc `HUMAN_REVIEW`, còn quyết định cuối
+> cùng là `QC_PASS`/`QC_REJECT` từ human review.
+
 ## 1. Nghiên Cứu Nền Tảng (Foundational Literature)
 
 - Roth et al. (CVPR 2022), *Towards Total Recall in Industrial Anomaly Detection (PatchCore)*: https://openaccess.thecvf.com/content/CVPR2022/html/Roth_Towards_Total_Recall_in_Industrial_Anomaly_Detection_CVPR_2022_paper.html
@@ -32,7 +37,7 @@
 - **Fail-Fast Inference Safety Engine**: Kiểm định nghiêm ngặt sự hiện diện và tính hợp lệ của `threshold` trong file cấu hình (`threshold > 0.0`), loại trừ lỗi silent failure.
 - **Coreset Ablation Study**: Xây dựng bảng thực nghiệm so sánh định lượng các mức coreset (100%, 20%, 10%, 5%), chứng minh mức coreset 5% giúp cắt giảm 95% RAM và tăng tốc 8.7x.
 
-### Phiên Bản 5.0 (Design B Artifacts, Dual-Threshold Calibration, 3-Tier Metrics & Enterprise Architecture - Hiện Tại)
+### Phiên Bản 5.0 (Design B Artifacts, Dual-Threshold Calibration, 3-Tier Metrics & Enterprise Architecture - Lịch sử)
 - **Pipeline 5 Giai Đoạn Canonical**: Chuẩn hóa toàn bộ dự án theo 5 giai đoạn: Data Preparation $\rightarrow$ Normal Representation $\rightarrow$ Memory Bank Construction $\rightarrow$ Calibration $\rightarrow$ Inference/Inspection.
 - **Artifact Thiết Kế B**: Chuyển đổi artifact sang lưu trữ `memory_bank.npy` (mảng numpy thuần) và `config.json`. Khởi dựng chỉ mục 1-NN (`NearestNeighbors`) tại runtime khi load model (~1-2 ms cho 1000 patch), loại bỏ triệt để rủi ro xung đột pickle joblib giữa các phiên bản thư viện.
 - **Căn Chỉnh Ngưỡng Kép (Dual-Threshold Calibration)**: Chấm dứt việc dùng heuristic $0.8 \times \text{threshold}$. Thay vào đó, căn chỉnh đồng thời:
@@ -51,7 +56,7 @@
 - **FastAPI Enterprise & ModelRegistry**:
   - Tách bạch `/health/live` (liveness) và `/health/ready` (readiness).
   - Trừu tượng hóa `ModelRegistry` hỗ trợ đa danh mục (`models/{category}/`), tự động quản lý vòng đời và cache model.
-  - Enriched API response payload (`inspection_id`, `prediction`, `localization`, `model`, `overlay_b64`).
+  - API response payload của phiên bản cũ (`inspection_id`, `prediction`, `localization`, `model`, `overlay_b64`).
 - **Tái Cấu Trúc Mã Nguồn & Kiểm Thử Phân Tầng**:
   - Cấu trúc module hóa chuyên nghiệp (`data`, `model`, `training`, `inference`, `evaluation`, `api`).
   - Hệ thống 33 tests phân tầng: `tests/unit/`, `tests/integration/`, `tests/regression/`.

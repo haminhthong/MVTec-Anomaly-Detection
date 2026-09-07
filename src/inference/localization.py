@@ -72,24 +72,24 @@ def create_heatmap_overlay_b64(
     img_resized = image.convert("RGB").resize((w_target, h_target), Image.Resampling.BILINEAR)
     img_np = np.asarray(img_resized, dtype=np.float32) / 255.0
 
-    # Normalize heatmap to [0, 1]
+    # Chuẩn hóa heatmap về [0, 1].
     h_min, h_max = float(heatmap.min()), float(heatmap.max())
     norm_heat = (heatmap - h_min) / (h_max - h_min + 1e-8)
     norm_heat = np.clip(norm_heat, 0.0, 1.0)
 
-    # Resize heatmap to match image target resolution
+    # Phóng to heatmap theo kích thước ảnh đích.
     heat_pil = Image.fromarray((norm_heat * 255).astype(np.uint8)).resize(
         (w_target, h_target), Image.Resampling.BILINEAR
     )
     heat_resized = np.asarray(heat_pil, dtype=np.float32) / 255.0
 
-    # Jet-like colormap generation without external plotting libraries
+    # Tạo màu kiểu Jet mà không thêm thư viện vẽ.
     r = np.clip(1.5 - np.abs(heat_resized * 4.0 - 3.0), 0.0, 1.0)
     g = np.clip(1.5 - np.abs(heat_resized * 4.0 - 2.0), 0.0, 1.0)
     b = np.clip(1.5 - np.abs(heat_resized * 4.0 - 1.0), 0.0, 1.0)
     color_map = np.stack([r, g, b], axis=-1)
 
-    # Blend overlay
+    # Trộn overlay với ảnh gốc.
     overlay = (1.0 - alpha) * img_np + alpha * color_map
     overlay = np.clip(overlay * 255.0, 0, 255).astype(np.uint8)
 
