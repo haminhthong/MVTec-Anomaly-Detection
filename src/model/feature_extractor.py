@@ -58,8 +58,8 @@ class FeatureExtractor(nn.Module):
             if "." in self.weights_name:
                 try:
                     resolved_weights = models.get_weight(self.weights_name)
-                except Exception:
-                    resolved_weights = self.weights_name
+                except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                    raise ValueError(f"Weights không hợp lệ: {self.weights_name}") from exc
             else:
                 resolved_weights = self.weights_name
         else:
@@ -67,8 +67,8 @@ class FeatureExtractor(nn.Module):
             if "." in self.weights_name:
                 try:
                     resolved_weights = models.get_weight(self.weights_name)
-                except Exception:
-                    resolved_weights = self.weights_name
+                except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                    raise ValueError(f"Weights registry không hợp lệ: {self.weights_name}") from exc
             else:
                 resolved_weights = self.weights_name
 

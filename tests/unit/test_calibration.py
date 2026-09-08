@@ -41,3 +41,18 @@ def test_calibrate_thresholds_returns_policy() -> None:
     assert policy.review_threshold < policy.fail_threshold
     assert policy.fail_threshold > 0
     assert policy.pixel_threshold > 0
+
+
+def test_calibration_rejects_nonfinite_or_mismatched_inputs() -> None:
+    """Calibration phải fail-fast khi score hoặc heatmap không hợp lệ."""
+    with pytest.raises(ValueError, match="số hữu hạn"):
+        calibrate_thresholds([1.0, float("nan")], [])
+
+    with pytest.raises(ValueError, match="cùng số mẫu"):
+        calibrate_thresholds([1.0, 2.0], [np.ones((2, 2), dtype=np.float32)])
+
+
+def test_threshold_policy_rejects_nonfinite_values() -> None:
+    """Artifact không được lưu threshold NaN hoặc vô cực."""
+    with pytest.raises(ValueError, match="số hữu hạn"):
+        ThresholdPolicy(auto_pass_threshold=float("nan"), pixel_threshold=1.0)

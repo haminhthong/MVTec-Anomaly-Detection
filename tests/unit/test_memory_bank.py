@@ -37,3 +37,12 @@ def test_memory_bank_save_and_load(tmp_path: Path) -> None:
     assert loaded.size == 50
     assert loaded.dim == 64
     assert np.allclose(loaded.vectors, bank.vectors)
+
+
+def test_memory_bank_rejects_invalid_query_shape_or_values() -> None:
+    """MemoryBank phải báo lỗi rõ khi query sai dimension hoặc chứa NaN."""
+    bank = MemoryBank(np.zeros((2, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="shape"):
+        bank.kneighbors(np.zeros((1, 3), dtype=np.float32))
+    with pytest.raises(ValueError, match="hữu hạn"):
+        bank.kneighbors(np.array([[0.0, 0.0, 0.0, np.nan]], dtype=np.float32))

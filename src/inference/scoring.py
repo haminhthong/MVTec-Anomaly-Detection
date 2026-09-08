@@ -41,6 +41,10 @@ def compute_image_score(
     Returns:
         float: Điểm anomaly cấp ảnh.
     """
+    if not 0.0 <= percentile <= 100.0 or not np.isfinite(percentile):
+        raise ValueError("percentile phải nằm trong khoảng [0.0, 100.0].")
     if smoothed_heatmap.size == 0:
         return 0.0
+    if not np.isfinite(smoothed_heatmap).all():
+        raise ValueError("Heatmap anomaly phải chỉ gồm giá trị hữu hạn.")
     return float(np.percentile(smoothed_heatmap, percentile))

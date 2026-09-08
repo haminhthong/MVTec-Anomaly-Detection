@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -39,9 +40,12 @@ class ThresholdPolicy:
             raise ValueError("ThresholdPolicy cần auto_pass_threshold và pixel_threshold.")
         selected = float(selected)
         pixel = float(pixel_threshold)
-        if selected < 0 or pixel < 0:
+        review_value = float(review_threshold if review_threshold is not None else selected)
+        if not all(math.isfinite(value) for value in (selected, review_value, pixel)):
+            raise ValueError("Các threshold phải là số hữu hạn.")
+        if selected < 0 or review_value < 0 or pixel < 0:
             raise ValueError("Các threshold không được âm.")
-        object.__setattr__(self, "review_threshold", float(review_threshold if review_threshold is not None else selected))
+        object.__setattr__(self, "review_threshold", review_value)
         object.__setattr__(self, "fail_threshold", selected)
         object.__setattr__(self, "pixel_threshold", pixel)
 

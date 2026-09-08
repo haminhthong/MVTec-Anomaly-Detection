@@ -14,8 +14,9 @@ models/*
 !models/memory_bank.npy
 !models/**/memory_bank.npy
 reports/*.json
+reports/**/*.json
 reports/*.csv
 !reports/.gitkeep
-!reports/test_metrics.json
 !reports/benchmark.csv
+!reports/bottle/test_metrics.json
 !reports/sample_outputs/

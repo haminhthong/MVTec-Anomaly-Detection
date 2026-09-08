@@ -180,6 +180,8 @@ def main():
         except Exception as exc:
             print(f"[ERROR] Failed processing category '{cat}': {exc}")
 
+    if not all_metrics:
+        raise RuntimeError("Không category nào hoàn thành pipeline; không ghi benchmark rỗng.")
     aggregate_benchmark_csv(all_metrics, output_csv=args.output_csv)
 
 

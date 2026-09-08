@@ -52,6 +52,11 @@ class AnomalyDetector:
             raise ValueError(
                 f"Coreset metadata={expected_size} nhưng memory bank có {self.memory_bank.size} rows."
             )
+        expected_dim = self.artifact.coreset_info.get("feature_dim")
+        if expected_dim is not None and int(expected_dim) != self.memory_bank.dim:
+            raise ValueError(
+                f"Feature metadata={expected_dim} nhưng memory bank có {self.memory_bank.dim} columns."
+            )
 
         self.preprocessing_config: PreprocessingConfig = self.artifact.preprocessing
         self.transform = build_transform(self.preprocessing_config)

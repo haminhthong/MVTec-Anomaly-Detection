@@ -1,8 +1,16 @@
 # Industrial Visual Anomaly Detection — PatchCore-style MVTec AD
 
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.7.1-ee4c2c.svg)](https://pytorch.org/)
+[![Torchvision](https://img.shields.io/badge/Torchvision-0.22.1-ee4c2c.svg)](https://pytorch.org/vision/stable/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688.svg)](https://fastapi.tiangolo.com/)
+[![NumPy](https://img.shields.io/badge/NumPy-2.2.6-013243.svg)](https://numpy.org/)
+[![scikit--learn](https://img.shields.io/badge/scikit--learn-1.7.1-F7931E.svg)](https://scikit-learn.org/)
+[![SciPy](https://img.shields.io/badge/SciPy-1.15.3-8CAAE6.svg)](https://scipy.org/)
+[![Pillow](https://img.shields.io/badge/Pillow-11.3.0-3776AB.svg)](https://python-pillow.org/)
+[![Matplotlib](https://img.shields.io/badge/Matplotlib-3.10.3-11557C.svg)](https://matplotlib.org/)
+[![Hugging Face Hub](https://img.shields.io/badge/Hugging%20Face%20Hub-0.36.0-FFD21E.svg)](https://huggingface.co/docs/huggingface_hub/)
+[![pytest](https://img.shields.io/badge/pytest-8.4.1-0A9EDC.svg)](https://pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Hệ thống phát hiện bất thường ảnh công nghiệp theo hướng **one-class**, dùng ảnh normal để xây dựng memory bank và chuyển ảnh nghi ngờ sang human QC. V1 có ba trạng thái kỹ thuật: `RECAPTURE_REQUIRED`, `AUTO_PASS`, `HUMAN_REVIEW`; quyết định chất lượng cuối cùng là `QC_PASS` hoặc `QC_REJECT` do con người ghi nhận.
@@ -33,29 +41,37 @@ Mermaid dưới đây là contract cấp cao chi phối code, config, artifact, 
 
 ```mermaid
 flowchart TD
-    A["Ảnh camera + category hoặc line_id"] --> B{"Capture contract đạt?"}
-    B -- "Không" --> C["RECAPTURE_REQUIRED\nKhông chạy anomaly model"]
-    B -- "Có" --> D["Resolve production release\nKhông fallback category"]
-    D --> E["Frozen FeatureExtractor\nlayer2 + layer3"]
-    E --> F["Patch embeddings\n[B x 784, 384]"]
-    F --> G["1-NN tới MemoryBank\nK = coreset_size"]
-    G --> H["Heatmap + Gaussian smoothing\nimage score P99"]
-    H --> I{"score < auto_pass_threshold?"}
-    I -- "Có" --> J["AUTO_PASS"]
-    I -- "Không" --> K["HUMAN_REVIEW\nQC_PASS hoặc QC_REJECT"]
-    J --> L["Lưu evidence inspection\nKhông cập nhật memory"]
-    K --> L
+    subgraph BUILD["Offline model building — chỉ normal reference"]
+        M["train/good normal"] --> N["Reference / Dev / Calibration"]
+        N --> O["Frozen backbone + patch embeddings"]
+        O --> P["Greedy k-center coreset\nMemoryBank K x D"]
+        N --> Q["Normal-only calibration\nAUTO_PASS + pixel threshold"]
+        P --> R["Immutable release + SHA256"]
+        Q --> R
+    end
 
-    M["train/good normal"] --> N["Reference / Dev / Calibration"]
-    N --> O["Build memory + coreset"]
-    N --> P["Normal-only calibration"]
-    O --> Q["Immutable release + SHA256"]
-    P --> Q
-    Q --> D
+    subgraph SERVE["Online serving — từng ảnh hoặc batch"]
+        A["Ảnh camera + category hoặc line_id"] --> B{"Capture contract đạt?"}
+        B -- "Không" --> C["RECAPTURE_REQUIRED\nKhông chạy anomaly model"]
+        B -- "Có" --> D["Resolve production release\nKhông fallback category"]
+        D --> E["Frozen FeatureExtractor\nlayer2 + layer3"]
+        E --> F["Patch embeddings\n[B x H x W, D]"]
+        F --> G["1-NN tới MemoryBank\nK = coreset_size"]
+        G --> H["Heatmap + Gaussian smoothing\nimage score P99"]
+        H --> I{"score < auto_pass_threshold?"}
+        I -- "Có" --> J["AUTO_PASS"]
+        I -- "Không" --> K["HUMAN_REVIEW\nQC_PASS hoặc QC_REJECT"]
+        J --> L["Lưu evidence inspection\nKhông cập nhật memory"]
+        K --> L
+    end
 
-    R["Official test + masks"] --> S["LockedEvaluationManifest"]
-    Q --> T["Report-only evaluation\nKhông retune threshold"]
-    S --> T
+    subgraph EVAL["Locked evaluation — chỉ report, không retune"]
+        T["Official test + masks"] --> U["LockedEvaluationManifest"]
+        R --> V["Report-only evaluation\nKhông retune threshold"]
+        U --> V
+    end
+
+    R --> D
 ```
 
 ### Bốn pipeline chính
@@ -65,7 +81,7 @@ flowchart TD
 3. **Evaluation**: dùng release đã freeze và `LockedEvaluationManifest`, ghi report; không chọn model/ngưỡng trên official test.
 4. **Serving**: API kiểm tra input và định tuyến category/line; `AnomalyDetector` thực hiện quality gate, scoring và response.
 
-`production.json` là pointer mutable duy nhất; thư mục `models/releases/` không bị overwrite. `ModelRegistry` không chọn category đầu tiên khi request thiếu mapping.
+`production.json` là pointer mutable duy nhất; thư mục `models/releases/` không bị overwrite. `ModelRegistry` không chọn category đầu tiên khi request thiếu mapping. Batch serving chạy quality gate từng ảnh, chỉ stack ảnh hợp lệ, sau đó ghép kết quả lại theo đúng thứ tự input.
 
 ### Verified benchmark snapshot — chỉ category `bottle`
 
@@ -287,6 +303,21 @@ pytest -q
 ```
 
 `pytest` cần PyTorch/torchvision theo `requirements.txt`; nếu runtime hiện tại chưa có hai package này thì test ML/API không thể collection đầy đủ.
+
+### 7.7. Shortcut qua Makefile
+
+Nếu môi trường có `make`, các lệnh tương ứng là:
+
+```bash
+make setup       # Cài requirements.txt
+make download    # Tải category mặc định
+make train       # Build release bottle
+make evaluate    # Ghi report runtime riêng, không ghi đè benchmark lịch sử
+make test        # Chạy pytest -q
+```
+
+`make evaluate` ghi vào `reports/bottle/test_metrics_make.json`; report đã tồn tại
+vẫn được bảo vệ giống CLI và cần xóa/chọn đường dẫn mới nếu muốn chạy lại.
 
 ---
 

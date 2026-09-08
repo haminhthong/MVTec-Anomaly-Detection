@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -87,13 +88,29 @@ def calibrate_thresholds(
     """
     if not normal_scores:
         raise ValueError("normal_scores đang rỗng, không thể calibration.")
-    selected_quantile = fail_quantile if fail_quantile is not None else auto_pass_quantile
-    if not 0.5 <= selected_quantile < 1.0:
-        raise ValueError("auto_pass_quantile phải thuộc khoảng [0.5, 1.0).")
-    if not 0.5 <= pixel_quantile < 1.0:
-        raise ValueError("pixel_quantile phải thuộc khoảng [0.5, 1.0).")
+    def normalize_quantile(name: str, value: float | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} phải là số trong khoảng [0.5, 1.0).") from exc
+        if not math.isfinite(normalized) or not 0.5 <= normalized < 1.0:
+            raise ValueError(f"{name} phải thuộc khoảng [0.5, 1.0).")
+        return normalized
+
+    selected_quantile = normalize_quantile(
+        "auto_pass_quantile",
+        fail_quantile if fail_quantile is not None else auto_pass_quantile,
+    )
+    pixel_quantile = normalize_quantile("pixel_quantile", pixel_quantile)
+    review_quantile = normalize_quantile("review_quantile", review_quantile)
 
     values = np.asarray(normal_scores, dtype=np.float32)
+    if values.ndim != 1 or not np.isfinite(values).all():
+        raise ValueError("normal_scores phải là vector một chiều chỉ gồm số hữu hạn.")
+    if normal_heatmaps and len(normal_heatmaps) != len(normal_scores):
+        raise ValueError("normal_heatmaps phải có cùng số mẫu với normal_scores.")
     auto_pass_threshold = float(np.quantile(values, selected_quantile))
     # Chỉ giữ review alias khi caller legacy truyền fail_quantile; artifact mới
     # không dùng ngưỡng này để quyết định.
@@ -103,7 +120,11 @@ def calibrate_thresholds(
         else auto_pass_threshold
     )
     if normal_heatmaps:
-        pixels = np.concatenate([np.asarray(heatmap, dtype=np.float32).ravel() for heatmap in normal_heatmaps])
+        pixels = np.concatenate(
+            [np.asarray(heatmap, dtype=np.float32).ravel() for heatmap in normal_heatmaps]
+        )
+        if pixels.size == 0 or not np.isfinite(pixels).all():
+            raise ValueError("normal_heatmaps phải chứa pixel số hữu hạn và không rỗng.")
         pixel_threshold = float(np.quantile(pixels, pixel_quantile))
     else:
         pixel_threshold = auto_pass_threshold

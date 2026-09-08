@@ -51,14 +51,25 @@ def _update_production_pointer(models_root: Path, category: str, release_id: str
     """Cập nhật pointer production; release directory không bị overwrite."""
     pointer_path = models_root / "production.json"
     if pointer_path.exists():
-        data = json.loads(pointer_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(pointer_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"production.json hiện tại không hợp lệ: {exc}") from exc
     else:
         data = {"categories": {}, "lines": {}}
-    data.setdefault("categories", {})[category] = f"releases/{release_id}"
+    if not isinstance(data, dict):
+        raise ValueError("production.json phải là một JSON object.")
+    categories = data.setdefault("categories", {})
+    lines = data.setdefault("lines", {})
+    if not isinstance(categories, dict) or not isinstance(lines, dict):
+        raise ValueError("production.json phải chứa object 'categories' và 'lines'.")
+    categories[category] = f"releases/{release_id}"
     if line_id:
-        data.setdefault("lines", {})[line_id] = {"category": category, "release_id": release_id}
+        lines[line_id] = {"category": category, "release_id": release_id}
     pointer_path.parent.mkdir(parents=True, exist_ok=True)
-    pointer_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    temp_path = pointer_path.with_name(f"{pointer_path.name}.tmp")
+    temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(pointer_path)
 
 
 def _save_legacy_category_alias(release_dir: Path, models_root: Path, category: str) -> None:
