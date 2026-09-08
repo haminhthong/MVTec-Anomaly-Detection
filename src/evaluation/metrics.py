@@ -34,7 +34,16 @@ def calculate_3tier_metrics(
     """
     y_arr = np.asarray(y_true, dtype=int)
     scores_arr = np.asarray(scores, dtype=np.float32)
-    if len(y_arr) != len(scores_arr) or len(masks) != len(y_arr) or len(maps) != len(y_arr):
+    mask_arr = np.asarray(masks)
+    map_arr = np.asarray(maps)
+    if not np.isin(y_arr, [0, 1]).all():
+        raise ValueError("y_true chỉ được chứa nhãn 0 hoặc 1.")
+    if (
+        len(y_arr) != len(scores_arr)
+        or len(mask_arr) != len(y_arr)
+        or len(map_arr) != len(y_arr)
+        or mask_arr.shape != map_arr.shape
+    ):
         raise ValueError("y_true, scores, masks và maps phải có cùng số mẫu.")
     selected_threshold = auto_pass_threshold
     if selected_threshold is None:
@@ -70,8 +79,8 @@ def calculate_3tier_metrics(
 
     image_auroc = _safe_metric(roc_auc_score, y_arr, scores_arr)
     image_ap = _safe_metric(average_precision_score, y_arr, scores_arr)
-    flat_masks = np.asarray(masks).ravel()
-    flat_maps = np.asarray(maps).ravel()
+    flat_masks = mask_arr.ravel()
+    flat_maps = map_arr.ravel()
     pixel_auroc = _safe_metric(roc_auc_score, flat_masks.astype(int), flat_maps)
     pixel_ap = _safe_metric(average_precision_score, flat_masks.astype(int), flat_maps)
     aupro_value = compute_aupro(masks, maps) if np.any(flat_masks) else None

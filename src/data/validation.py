@@ -17,6 +17,7 @@ from .manifest import (
     NormalReferenceManifest,
     SUPPORTED_EXTENSIONS,
 )
+from ..path_safety import ensure_safe_segment
 
 
 class DatasetValidationError(Exception):
@@ -25,6 +26,7 @@ class DatasetValidationError(Exception):
 
 def _find_category_root(data_dir: str | Path, category: str) -> Path:
     """Tìm thư mục category theo hai layout phổ biến của MVTec AD."""
+    category = ensure_safe_segment(category, "category")
     raw_path = Path(data_dir)
     candidates = [
         raw_path / category,

@@ -1,4 +1,4 @@
-"""Greedy K-Center Coreset selection module for Memory Bank subsampling.
+"""Chọn coreset Greedy K-Center để rút gọn Memory Bank.
 
 Data flow:
 Full Patches [N, D] (e.g. D = 384)
@@ -13,8 +13,8 @@ Slice original D-dimensional features (e.g. 384D)
     ↓
 Final Memory Bank [K, D]
 
-The 64D random projection is strictly used for coreset selection speedup;
-all subsequent 1-NN nearest-neighbor lookups operate on original D-dimensional space.
+Phép chiếu ngẫu nhiên 64D chỉ dùng để tăng tốc chọn coreset; toàn bộ truy vấn
+1-NN sau đó vẫn hoạt động trên vector D chiều gốc.
 """
 
 from __future__ import annotations
@@ -28,19 +28,19 @@ def select_coreset_indices(
     seed: int = 42,
     projection_dim: int = 64,
 ) -> np.ndarray:
-    """Select representative subset indices using Greedy K-Center with Random Projection.
+    """Chọn index đại diện bằng Greedy K-Center và Random Projection.
 
     Args:
-        features: 2D array of patch embeddings [N, D].
-        size: Target number of coreset samples to retain (K).
-        seed: Random seed for projection matrix and starting index.
-        projection_dim: Dimension for Johnson-Lindenstrauss random projection.
+        features: Mảng embedding patch 2D [N, D].
+        size: Số mẫu coreset cần giữ lại (K).
+        seed: Seed cho ma trận chiếu và index khởi đầu.
+        projection_dim: Số chiều phép chiếu Johnson-Lindenstrauss.
 
     Returns:
-        np.ndarray: 1D array of selected integer indices of shape [K].
+        np.ndarray: Mảng index nguyên [K].
 
     Raises:
-        ValueError: If size is non-positive or exceeds array length.
+        ValueError: Nếu size không dương hoặc vượt số phần tử.
     """
     if size <= 0:
         raise ValueError(f"Kích thước coreset phải là một số nguyên dương > 0, nhận được: {size}.")
@@ -73,15 +73,15 @@ def select_coreset_indices(
 
 
 def greedy_coreset(features: np.ndarray, size: int, seed: int = 42) -> np.ndarray:
-    """Greedy K-Center Coreset returning subsampled original feature vectors [K, D].
+    """Trả về vector feature gốc [K, D] sau khi chọn Greedy K-Center.
 
     Args:
-        features: 2D array of original patch embeddings [N, D] (e.g. 384D).
-        size: Target number of patches (K).
-        seed: Random seed for reproducibility.
+        features: Mảng embedding patch gốc [N, D], ví dụ D=384.
+        size: Số patch mục tiêu (K).
+        seed: Seed để tái lập kết quả.
 
     Returns:
-        np.ndarray: Coreset patch embeddings in original dimension [K, D].
+        np.ndarray: Embedding patch coreset ở số chiều gốc [K, D].
     """
     indices = select_coreset_indices(features=features, size=size, seed=seed)
     return features[indices]

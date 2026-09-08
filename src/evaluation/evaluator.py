@@ -74,6 +74,8 @@ def evaluate_category(
         resolved_category = artifact.metadata.category
     if resolved_category is None:
         raise ValueError("Cần truyền category hoặc evaluation manifest.")
+    if isinstance(artifact, ModelArtifact) and artifact.metadata.category != resolved_category:
+        raise ValueError("Artifact không khớp category của evaluation.")
 
     detector = AnomalyDetector(model_dir=model_dir or "models", category=resolved_category)
     if manifest_obj is None:
@@ -83,15 +85,10 @@ def evaluate_category(
         raise ValueError("Evaluation manifest không khớp category của artifact.")
 
     report_file = Path(output_report) if output_report else Path("reports") / resolved_category / "test_metrics.json"
-    if report_file.exists() and not reopen:
-        try:
-            previous = json.loads(report_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            previous = {}
-        if previous.get("locked_test"):
-            raise FileExistsError(
-                f"Locked report đã tồn tại tại '{report_file}'. Dùng reopen=True nếu thật sự cần mở lại."
-            )
+    if report_file.exists() and report_file.stat().st_size > 0 and not reopen:
+        raise FileExistsError(
+            f"Report đã tồn tại tại '{report_file}'. Dùng reopen=True nếu thật sự cần ghi lại."
+        )
 
     target_height, target_width = detector.preprocessing_config.image_size
     labels: list[int] = []

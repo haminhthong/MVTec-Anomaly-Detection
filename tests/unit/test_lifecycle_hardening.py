@@ -282,7 +282,7 @@ def test_missing_mask_fails_fast(dummy_mvtec_dataset: tuple[Path, str]) -> None:
     assert mask_to_delete.exists()
     mask_to_delete.unlink()
 
-    with pytest.raises(DatasetValidationError, match="Missing ground-truth mask"):
+    with pytest.raises(DatasetValidationError, match="ground-truth mask"):
         validate_mvtec_category(data_dir=raw_dir, category=category)
 
 

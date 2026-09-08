@@ -1,7 +1,7 @@
-"""Dataset management and loader for MVTec AD images.
+"""Dataset và bộ nạp ảnh MVTec AD.
 
-Provides PyTorch Dataset reading images from paths and applying transforms.
-Integrates with DatasetManifest and validate_mvtec_category.
+Dataset đọc ảnh từ danh sách đường dẫn, áp dụng transform và dùng manifest
+đã được validate để bảo đảm đúng boundary dữ liệu.
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ from .validation import DatasetManifest, validate_mvtec_category
 
 
 class ImageFolderDataset(Dataset):
-    """PyTorch Dataset reading images from a list of paths.
+    """Dataset PyTorch đọc ảnh từ một danh sách đường dẫn.
 
     Args:
-        paths: Sequence of image file paths (Path or str).
-        transform: Image transform function (PIL.Image -> Tensor).
+        paths: Danh sách đường dẫn ảnh dạng ``Path`` hoặc chuỗi.
+        transform: Hàm transform từ ``PIL.Image`` sang tensor.
     """
 
     def __init__(
@@ -38,17 +38,17 @@ class ImageFolderDataset(Dataset):
         )
 
     def __len__(self) -> int:
-        """Total number of images in dataset."""
+        """Trả về tổng số ảnh trong dataset."""
         return len(self.paths)
 
     def __getitem__(self, i: int) -> tuple[Tensor, str]:
-        """Read and transform image at index i.
+        """Đọc và transform ảnh tại vị trí ``i``.
 
         Args:
-            i: Image index.
+            i: Chỉ số ảnh.
 
         Returns:
-            tuple[Tensor, str]: Transformed image tensor [3, H, W] and file path string.
+            tuple[Tensor, str]: Tensor ảnh [3, H, W] và đường dẫn file.
         """
         p = self.paths[i]
         with Image.open(p) as img:
@@ -57,14 +57,14 @@ class ImageFolderDataset(Dataset):
 
 
 def find_category_root(raw: str | Path = "data/raw", category: str = "bottle") -> Path:
-    """Find and validate category directory under data directory.
+    """Tìm và validate thư mục category dưới thư mục dữ liệu.
 
     Args:
-        raw: Path to raw data directory.
-        category: Name of category.
+        raw: Đường dẫn thư mục dữ liệu raw.
+        category: Tên category.
 
     Returns:
-        Path: Path to category root directory.
+        Path: Đường dẫn tới thư mục gốc của category.
     """
     manifest = validate_mvtec_category(data_dir=raw, category=category)
     return manifest.root_path

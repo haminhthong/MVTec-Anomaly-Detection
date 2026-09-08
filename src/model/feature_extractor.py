@@ -1,8 +1,7 @@
-"""Multi-layer patch feature extractor for PatchCore-style anomaly detection.
+"""Trích xuất multi-layer patch feature cho anomaly detection PatchCore-style.
 
-Extracts intermediate feature maps from frozen pretrained backbones (e.g. ResNet18, ResNet50),
-spatially aligns them to the highest-resolution target layer via bilinear interpolation,
-and concatenates them into dense local patch embeddings capturing textures and semantics.
+Module lấy feature map trung gian từ backbone frozen, căn chỉnh về layer có
+độ phân giải cao nhất rồi ghép thành embedding patch cục bộ.
 """
 
 from __future__ import annotations
@@ -15,18 +14,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 
-
-from .backbone_registry import BACKBONE_REGISTRY, get_backbone_spec
+from .backbone_registry import get_backbone_spec
 
 
 class FeatureExtractor(nn.Module):
-    """Configurable multi-layer patch feature extractor with frozen weights.
+    """Bộ trích xuất patch feature nhiều layer với trọng số frozen.
 
     Attributes:
-        backbone_name: Name of the CNN backbone architecture.
-        layers: Sequence of layer names to extract features from.
-        pretrained: Whether ImageNet weights are loaded.
-        weights: Weights enum identifier or string.
+        backbone_name: Tên kiến trúc backbone CNN.
+        layers: Các layer được dùng để lấy feature.
+        pretrained: Có nạp trọng số ImageNet hay không.
+        weights: Tên enum hoặc chuỗi định danh trọng số.
     """
 
     def __init__(
@@ -37,18 +35,14 @@ class FeatureExtractor(nn.Module):
         weights: str | None = None,
     ) -> None:
         super().__init__()
+        backbone = backbone.strip().lower()
         self.backbone_name: str = backbone
         self.pretrained: bool = pretrained
 
-        # Resolve thông số backbone nếu có trong registry.
-        try:
-            spec = get_backbone_spec(backbone)
-            default_layers = spec.default_layers
-            default_weights = spec.weights
-        except ValueError:
-            spec = None
-            default_layers = ("layer2", "layer3")
-            default_weights = "DEFAULT"
+        # Chỉ dùng backbone đã có contract trong registry.
+        spec = get_backbone_spec(backbone)
+        default_layers = spec.default_layers
+        default_weights = spec.weights
 
         self.layers: tuple[str, ...] = tuple(layers) if layers is not None else default_layers
 
@@ -106,13 +100,13 @@ class FeatureExtractor(nn.Module):
 
     @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass returning patch embeddings tensor [B * H_map * W_map, C_total].
+        """Forward và trả về tensor embedding patch [B * H_map * W_map, C_total].
 
         Args:
-            x: Input image tensor [Batch, 3, Height, Width].
+            x: Tensor ảnh đầu vào [Batch, 3, Height, Width].
 
         Returns:
-            torch.Tensor: Flattened patch embeddings [N_patches, C_total].
+            torch.Tensor: Embedding patch đã phẳng [N_patches, C_total].
         """
         patches, _ = self.extract_spatial_features(x)
         return patches
@@ -121,15 +115,15 @@ class FeatureExtractor(nn.Module):
     def extract_spatial_features(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, tuple[int, int]]:
-        """Extract patch features along with spatial grid dimensions (H_map, W_map).
+        """Lấy patch feature kèm kích thước lưới không gian (H_map, W_map).
 
         Args:
-            x: Input image tensor [Batch, 3, Height, Width].
+            x: Tensor ảnh đầu vào [Batch, 3, Height, Width].
 
         Returns:
             tuple[torch.Tensor, tuple[int, int]]:
-                - patches: Tensor of patch embeddings [B * H_map * W_map, C_total].
-                - (h_map, w_map): Spatial resolution of aligned patch grid.
+                - patches: Tensor embedding patch [B * H_map * W_map, C_total].
+                - (h_map, w_map): Độ phân giải lưới patch sau khi căn chỉnh.
         """
         self._feature_maps.clear()
         _ = self.model(x)

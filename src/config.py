@@ -6,6 +6,8 @@ import argparse
 from dataclasses import dataclass, field
 
 from .data.transforms import PreprocessingConfig
+from .model.backbone_registry import get_backbone_spec
+from .path_safety import ensure_safe_segment
 
 # Các giá trị mặc định của hệ thống
 DEFAULT_CATEGORY: str = "bottle"
@@ -69,10 +71,13 @@ class TrainConfig:
         Raises:
             ValueError: Nếu bất kỳ tham số nào nằm ngoài dải hợp lệ.
         """
-        if not self.category.strip():
-            raise ValueError("Tên danh mục (category) không được để trống.")
+        ensure_safe_segment(self.category, "category")
         if not self.backbone.strip():
             raise ValueError("Tên backbone không được để trống.")
+        get_backbone_spec(self.backbone)
+        ensure_safe_segment(self.model_version, "model_version")
+        if self.line_id is not None and not self.line_id.strip():
+            raise ValueError("line_id không được để trống khi đã truyền vào config.")
         if not self.feature_layers:
             raise ValueError("Danh sách feature_layers không được rỗng.")
         if self.batch_size <= 0:

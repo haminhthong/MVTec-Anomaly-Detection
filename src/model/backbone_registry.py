@@ -1,19 +1,17 @@
-"""Backbone architecture specification and registry for PatchCore feature extraction.
+"""Registry backbone cho trích xuất feature PatchCore-style.
 
-Enforces strict backbone and layer compatibility:
-- Avoids arbitrary layer mismatches across different vision architectures
-- Pairs architectures with their verified ImageNet weights enum
+Registry ép contract tương thích giữa kiến trúc, layer và bộ trọng số ImageNet
+đã đăng ký; không cho phép tự chọn backbone ngoài contract.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(frozen=True)
 class BackboneSpec:
-    """Specification contract for supported vision backbones."""
+    """Mô tả contract của một backbone được hỗ trợ."""
 
     name: str
     default_layers: tuple[str, ...]
@@ -44,16 +42,16 @@ BACKBONE_REGISTRY: dict[str, BackboneSpec] = {
 
 
 def get_backbone_spec(name: str) -> BackboneSpec:
-    """Retrieve verified BackboneSpec for an architecture.
+    """Lấy BackboneSpec đã được xác thực cho một kiến trúc.
 
     Args:
-        name: Name of architecture (e.g. 'resnet18', 'resnet50').
+        name: Tên kiến trúc, ví dụ ``resnet18`` hoặc ``resnet50``.
 
     Returns:
-        BackboneSpec: Registered specification.
+        BackboneSpec: Contract tương ứng trong registry.
 
     Raises:
-        ValueError: If architecture is not officially supported.
+        ValueError: Nếu kiến trúc chưa được hỗ trợ chính thức.
     """
     key = name.lower().strip()
     if key not in BACKBONE_REGISTRY:
@@ -65,5 +63,5 @@ def get_backbone_spec(name: str) -> BackboneSpec:
 
 
 def list_supported_backbones() -> list[str]:
-    """List all officially supported backbone names."""
+    """Liệt kê tên các backbone được hỗ trợ chính thức."""
     return sorted(BACKBONE_REGISTRY.keys())

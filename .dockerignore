@@ -6,6 +6,7 @@ __pycache__
 .pytest_cache
 tests
 reports
+experiments
 data
 *.pyc
 *.log

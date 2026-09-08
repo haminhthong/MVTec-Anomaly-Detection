@@ -1,12 +1,12 @@
-# Model Architecture & Methodology Deep Dive
+# Kiến trúc và phương pháp PatchCore-style
 
-This document explains the mathematical, visual, and operational rationales behind the modeling decisions in this PatchCore-style visual anomaly detection system.
+Tài liệu này giải thích cơ sở kỹ thuật và operational policy của hệ thống PatchCore-style. README là contract vận hành; tài liệu này chỉ đi sâu vào model.
 
 ---
 
 ## 1. Why One-Class Anomaly Detection?
 
-In industrial manufacturing, defective items are rare (often < 0.1% of production), unpredictable, and structurally diverse (e.g. scratches, contaminations, dents, cracks, color bleeding). Standard supervised object detection or segmentation requires thousands of labeled defect examples, which is cost-prohibitive or physically impossible in real-world factories.
+MVTec AD cung cấp `train/good` normal và official test có defect/mask. Vì vậy normal-only anomaly detection là formulation phù hợp cho repo này. Supervised learning vẫn có thể phù hợp trong nhà máy nếu có đủ defect labels ổn định; repo hiện tại không dùng supervised classification.
 
 One-Class Visual Anomaly Detection models the manifold of **normal, nominal products**. Any sample that deviates significantly from this nominal manifold is flagged as defective.
 
@@ -25,8 +25,8 @@ PatchCore (Roth et al., CVPR 2022) addresses the core limitations of prior anoma
 
 1. **Backbone Choice (ResNet18)**:
    - Provides a balance between inference latency and representational richness.
-   - Low memory footprint (44 MB model parameters, fast CPU execution ~140ms per image).
-   - Higher capacity backbones (e.g., WideResNet50) offer marginal AUROC gains (+0.5–1.0%) at the cost of 4x memory and 3–5x latency.
+   - Cân bằng giữa chất lượng biểu diễn và chi phí suy luận; latency thực tế phải đo bằng `scripts/benchmark_inference.py` vì phụ thuộc hardware/runtime.
+   - Backbone lớn hơn có thể cho biểu diễn khác nhưng phải được đánh giá lại trên Dev/Calibration; không suy ra mức tăng cố định từ benchmark `bottle`.
 
 2. **Layer Selection (`layer2` + `layer3`)**:
    - `layer1`: Low-level edge and color filters; too localized and noisy for structural anomaly detection.
@@ -40,13 +40,13 @@ PatchCore (Roth et al., CVPR 2022) addresses the core limitations of prior anoma
 ## 4. What is a Patch Embedding? What is a Memory Bank?
 
 - **Patch Embedding**: A feature vector representing an effective receptive field on the input image. For an input of $224 \times 224$, the model generates $28 \times 28 = 784$ patch embeddings, each of dimension $D = 384$.
-- **Memory Bank**: The collection of all patch embeddings extracted from normal training images. For 167 images, the raw memory bank contains $167 \times 784 = 130,928$ vectors.
+- **Memory Bank**: Tập patch embeddings lấy từ ảnh normal Reference. Với $N$ ảnh và grid $H \times W$, full memory có $N \times H \times W$ vector trước khi coreset; con số cụ thể phụ thuộc dataset và preprocessing.
 
 ---
 
 ## 5. Why Coreset Selection?
 
-A raw memory bank of 130,928 vectors per category creates prohibitive runtime latency during nearest-neighbor search.
+Full memory có thể lớn theo số ảnh và kích thước feature grid, vì vậy repo dùng coreset để kiểm soát chi phí nearest-neighbor search.
 
 **Greedy K-Center Coreset Selection**:
 - Finds a subset $\mathcal{M}_C \subset \mathcal{M}$ of size $K$ that minimizes the maximum distance from any point in $\mathcal{M}$ to its nearest neighbor in $\mathcal{M}_C$:
@@ -87,28 +87,23 @@ QC quyết định `QC_PASS` hoặc `QC_REJECT`.
 
 ---
 
-## 8. Ablation Studies
+## 8. Ablation trên Dev
 
-### Explicit Coreset Size (Category: `bottle`)
+Ablation phải chạy trên Reference/Dev và synthetic stress; official test chỉ dùng ở
+locked evaluation. Các kết quả sinh ra trong `experiments/` là evidence để chọn
+configuration, không tự động cập nhật production pointer.
 
-| Coreset Size ($K$) | RAM Footprint | Inference Latency (Batch=1) | Image AUROC | Pixel AUROC | AUPRO@0.3 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **130,928 (full)** | 191.3 MB | 1,120 ms | 1.0000 | 0.9825 | 0.9422 |
-| **4,000** | 5.86 MB | 260 ms | 1.0000 | 0.9821 | 0.9416 |
-| **2,000** | 2.93 MB | 185 ms | 1.0000 | 0.9819 | 0.9412 |
-| **1,000 (engineering baseline)** | **1.46 MB** | **145 ms** | **1.0000** | **0.9818** | **0.9410** |
-| **200** | 0.29 MB | 88 ms | 0.9940 | 0.9760 | 0.9280 |
+```bash
+python scripts/run_ablations.py --category bottle --experiment coreset
+python scripts/run_ablations.py --category bottle --experiment layers
+python scripts/run_ablations.py --category bottle --experiment backbone
+```
 
-Các con số trên là historical benchmark cần được tái chạy bằng Dev-only ablation
-trước khi chọn release. `coreset_size=1000` là engineering baseline, không phải
-claim champion được chọn bằng official Test.
+Các trục có trong code:
 
-### Layer Ablation (Category: `bottle`)
+- `coreset`: so sánh các giá trị K cụ thể.
+- `layers`: so sánh `layer2`, `layer3` và `layer2 + layer3`.
+- `backbone`: so sánh các backbone đã đăng ký.
 
-| Configuration | Feature Dim | Image AUROC | Pixel AUROC | AUPRO@0.3 |
-| :--- | :---: | :---: | :---: | :---: |
-| `layer2` only | 128 | 0.9860 | 0.9710 | 0.9150 |
-| `layer3` only | 256 | 0.9920 | 0.9680 | 0.9020 |
-| **`layer2` + `layer3`** | **384** | **1.0000** | **0.9818** | **0.9410** |
-
-**Finding**: Combining `layer2` (high spatial resolution) with `layer3` (semantic context) outperforms either layer individually across both detection (+0.8–1.4%) and localized segmentation (+2.6–3.9% AUPRO).
+Sau khi chọn cấu hình, phải build release mới với `model_version` mới, chạy locked
+evaluation và review report trước khi cập nhật production.

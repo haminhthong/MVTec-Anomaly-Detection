@@ -4,6 +4,7 @@ __pycache__/
 .env
 .pytest_cache/
 mlruns/
+experiments/
 data/raw/*
 data/processed/*
 models/*

@@ -8,14 +8,11 @@ from pathlib import Path
 import sys
 from typing import Any
 
-import pandas as pd
-
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.config import TrainConfig
 from src.pipeline import run_end_to_end_pipeline
 
 ALL_MVTEC_CATEGORIES = [
@@ -57,6 +54,7 @@ def run_pipeline_for_category(
     models_dir: str | Path = "models",
     backbone: str = "resnet18",
     model_version: str = "1.0.0",
+    reopen: bool = False,
 ) -> dict[str, Any]:
     """Chạy Reference -> Train -> Locked Evaluation cho một category."""
     report_file = Path("reports") / category / "test_metrics.json"
@@ -67,6 +65,7 @@ def run_pipeline_for_category(
         models_dir=models_dir,
         output_report=report_file,
         model_version=model_version,
+        reopen=reopen,
     )
     return metrics
 
@@ -136,8 +135,12 @@ def aggregate_benchmark_csv(
         writer.writerows(rows)
 
     print(f"\n[BENCHMARK] Saved aggregated metrics to '{out_path}'.")
-    df = pd.DataFrame(rows)
-    print(df[["category", "test_samples", "image_auroc", "pixel_auroc", "aupro_0.3", "defect_escape_rate"]].to_string(index=False))
+    print("category | samples | image_auroc | pixel_auroc | aupro@0.3 | defect_escape")
+    for row in rows:
+        print(
+            f"{row['category']} | {row['test_samples']} | {row['image_auroc']} | "
+            f"{row['pixel_auroc']} | {row['aupro_0.3']} | {row['defect_escape_rate']}"
+        )
 
 
 def main():
@@ -148,6 +151,7 @@ def main():
     parser.add_argument("--output-csv", default="reports/benchmark.csv", help="Output benchmark CSV path")
     parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
     parser.add_argument("--model-version", default="1.0.0", help="Immutable release version")
+    parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
     args = parser.parse_args()
 
     if args.categories:
@@ -155,8 +159,10 @@ def main():
     else:
         target_categories = discover_available_categories(args.data_dir)
         if not target_categories:
-            print(f"No categories found in '{args.data_dir}'. Falling back to 'bottle'.")
-            target_categories = ["bottle"]
+            raise FileNotFoundError(
+                f"Không tìm thấy category MVTec AD nào trong '{args.data_dir}'. "
+                "Hãy tải dataset trước khi chạy multi-category pipeline."
+            )
 
     print(f"Categories to process: {target_categories}")
     all_metrics: list[dict[str, Any]] = []
@@ -168,6 +174,7 @@ def main():
                 models_dir=args.models_dir,
                 backbone=args.backbone,
                 model_version=args.model_version,
+                reopen=args.reopen_locked_test,
             )
             all_metrics.append(m)
         except Exception as exc:

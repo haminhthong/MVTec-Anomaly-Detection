@@ -52,7 +52,7 @@ def test_detector_from_saved_artifact(tmp_path: Path) -> None:
 
     assert "inspection_id" in result
     assert result["category"] == category
-    assert result["decision"] in {"PASS", "REVIEW", "FAIL"}
+    assert result["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
     assert result["scores"]["anomaly_score"] >= 0
     assert result["overlay_b64"] is not None
     assert result["overlay_b64"].startswith("data:image/png;base64,")

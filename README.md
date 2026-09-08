@@ -240,19 +240,23 @@ python -m src.train \
 ### 7.4. Đánh giá locked test
 
 ```bash
-# Report-only: load release production và đọc official test/mask
-python -m src.pipeline evaluate --category bottle
+# Report-only: ghi ra file mới, không ghi đè report lịch sử
+python -m src.pipeline evaluate \
+  --category bottle \
+  --output-report reports/bottle/test_metrics_v1.json
 
 # Tương đương, có thể chỉ định file report
 python -m src.evaluate \
   --category bottle \
-  --output-report reports/bottle/test_metrics.json
+  --output-report reports/bottle/test_metrics_v1.json
 ```
 
-`src.evaluate` từ chối mở lại test đã khóa nếu không có cờ rõ ràng. Chỉ dùng cờ dưới đây khi đang kiểm tra lại một evaluation run có chủ đích:
+Report đã tồn tại không bị ghi đè mặc định. Chỉ dùng cờ dưới đây khi đang kiểm tra lại một evaluation run có chủ đích:
 
 ```bash
-python -m src.evaluate --category bottle --reopen-locked-test
+python -m src.pipeline evaluate \
+  --category bottle \
+  --reopen-locked-test
 ```
 
 ### 7.5. Chạy API
@@ -272,8 +276,11 @@ python scripts/benchmark_inference.py --category bottle --runs 30
 # Ablation chỉ dùng Dev normal và synthetic stress, không dùng official test
 python scripts/run_ablations.py --category bottle --experiment all
 
-# Chạy toàn bộ category đã tải và ghi summary nếu cần
+# Chạy toàn bộ category đã tải và ghi summary
 python scripts/run_all_categories.py --model-version 1.0.0
+
+# Chỉ thêm cờ này khi chủ động ghi lại report đã tồn tại
+# python scripts/run_all_categories.py --model-version 1.0.0 --reopen-locked-test
 
 # Test
 pytest -q
@@ -323,6 +330,7 @@ Mvtec-Anomaly-Detection/
 │   ├── model/                      # Backbone, coreset, artifact, registry
 │   ├── storage/                    # SQLite inspection/review lifecycle
 │   ├── training/                   # Split, calibration và trainer offline
+│   ├── path_safety.py              # Chặn category/release path traversal
 │   ├── config.py                   # TrainConfig/PreprocessingConfig
 │   ├── evaluate.py                 # CLI locked evaluation
 │   ├── pipeline.py                 # Orchestrator data/train/evaluate/serve
@@ -335,7 +343,6 @@ Mvtec-Anomaly-Detection/
 ├── Makefile                         # Shortcut setup/download/train/evaluate/test
 ├── Dockerfile                        # Image chạy API nếu cần container hóa
 ├── LICENSE                           # MIT license
-├── RESEARCH_REPORT.md                # Báo cáo lịch sử, không phải contract runtime
 ├── .gitignore                        # Loại trừ dataset, cache và artifact runtime
 ├── pytest.ini                       # Cấu hình pytest tối thiểu, không sinh temp trong repo
 ├── requirements.txt                 # Dependency versions
@@ -441,10 +448,10 @@ Các ảnh dưới đây là artifact thật đã có trong repository. Mỗi �
 
 ![Good inspection sample](reports/sample_outputs/inspection_good_sample.png)
 
-Repo hiện lưu hai composite sample tương ứng với defect và normal; mỗi composite đã có đủ bốn panel `Input | Ground Truth | Heatmap | Overlay`. Script hiện được cố định cho sample `bottle`, không nhận `--category`; không tạo ảnh minh họa giả hoặc ghi nhãn benchmark cho category chưa được chạy. Sau khi đã train release và đặt dataset đúng vị trí, chạy:
+Repo hiện lưu hai composite sample tương ứng với defect và normal; mỗi composite đã có đủ bốn panel `Input | Ground Truth | Heatmap | Overlay`. Script chọn defect type đầu tiên của category và không tạo ảnh minh họa giả hoặc ghi nhãn benchmark cho category chưa được chạy. Sau khi đã train release và đặt dataset đúng vị trí, chạy:
 
 ```bash
-python scripts/generate_visual_samples.py
+python scripts/generate_visual_samples.py --category bottle
 ```
 
 ## 12. Định nghĩa metrics

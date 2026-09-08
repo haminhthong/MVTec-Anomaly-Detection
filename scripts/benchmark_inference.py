@@ -1,4 +1,4 @@
-"""Inference Latency, Throughput, and Resource Footprint Benchmark.
+"""Benchmark latency, throughput và footprint tài nguyên của inference.
 
 Đo lường:
 - Độ trễ một ảnh (Mean, Median, P95, Min, Max).

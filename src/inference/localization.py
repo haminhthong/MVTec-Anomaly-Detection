@@ -1,9 +1,6 @@
-"""Defect Localization and visualization utilities.
+"""Tiện ích định vị defect và tạo visualization.
 
-Functions:
-- Gaussian smoothing on raw patch distance heatmaps
-- Calculation of anomalous area ratio (ratio of pixels exceeding calibrated pixel threshold)
-- Base64 PNG heatmap overlay blending with configurable image size (not hardcoded)
+Module smoothing heatmap, tính tỷ lệ diện tích anomaly và tạo overlay base64.
 """
 
 from __future__ import annotations
@@ -17,14 +14,14 @@ from scipy.ndimage import gaussian_filter
 
 
 def apply_heatmap_smoothing(heatmap: np.ndarray, sigma: float = 1.0) -> np.ndarray:
-    """Apply Gaussian smoothing filter to raw anomaly map.
+    """Áp dụng Gaussian smoothing cho heatmap anomaly thô.
 
     Args:
-        heatmap: 2D array of patch anomaly distances [H, W].
-        sigma: Standard deviation for Gaussian kernel (if <= 0, returns unblurred).
+        heatmap: Mảng khoảng cách patch 2D [H, W].
+        sigma: Độ lệch chuẩn kernel Gaussian; nếu <= 0 thì giữ nguyên.
 
     Returns:
-        np.ndarray: Smoothed 2D heatmap.
+        np.ndarray: Heatmap 2D sau smoothing.
     """
     if sigma <= 0:
         return heatmap
@@ -34,16 +31,16 @@ def apply_heatmap_smoothing(heatmap: np.ndarray, sigma: float = 1.0) -> np.ndarr
 def compute_anomalous_area_ratio(
     heatmap: np.ndarray, pixel_threshold: float
 ) -> float:
-    """Compute fraction of heatmap area exceeding calibrated pixel threshold.
+    """Tính tỷ lệ diện tích heatmap vượt pixel threshold đã calibration.
 
     Args:
-        heatmap: 2D smoothed heatmap [H, W].
-        pixel_threshold: Calibrated operating pixel threshold.
+        heatmap: Heatmap 2D đã smoothing [H, W].
+        pixel_threshold: Pixel threshold dùng khi vận hành.
 
     Returns:
-        float: Area ratio in range [0.0, 1.0].
+        float: Tỷ lệ diện tích trong khoảng [0.0, 1.0].
     """
-    if heatmap.size == 0 or pixel_threshold <= 0:
+    if heatmap.size == 0:
         return 0.0
     anomalous_pixels = np.sum(heatmap >= pixel_threshold)
     return float(anomalous_pixels / heatmap.size)
@@ -56,17 +53,17 @@ def create_heatmap_overlay_b64(
     alpha: float = 0.45,
     target_size: tuple[int, int] = (224, 224),
 ) -> str:
-    """Create color overlay of anomaly map onto input image encoded as Base64 PNG.
+    """Tạo overlay màu từ heatmap trên ảnh đầu vào dưới dạng Base64 PNG.
 
     Args:
-        image: Original input PIL Image.
-        heatmap: 2D anomaly heatmap [H, W].
-        threshold: Optional threshold for visualization reference.
-        alpha: Blending ratio for heatmap onto original image.
-        target_size: Target resolution (height, width) dynamically driven by config.
+        image: Ảnh PIL đầu vào.
+        heatmap: Heatmap anomaly 2D [H, W].
+        threshold: Threshold tùy chọn chỉ dùng làm tham chiếu visualization.
+        alpha: Tỷ lệ trộn heatmap lên ảnh gốc.
+        target_size: Độ phân giải đích (height, width) lấy từ config.
 
     Returns:
-        str: Base64 data URI string ('data:image/png;base64,...').
+        str: Chuỗi data URI Base64 dạng ``data:image/png;base64,...``.
     """
     h_target, w_target = target_size
     img_resized = image.convert("RGB").resize((w_target, h_target), Image.Resampling.BILINEAR)

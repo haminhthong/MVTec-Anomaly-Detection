@@ -1,8 +1,8 @@
-# System Architecture: Industrial Visual Anomaly Detection
+# Kiến trúc hệ thống phát hiện bất thường ảnh công nghiệp
 
 ## 1. Overview & Architectural Philosophy
 
-This repository implements a production-grade, One-Class Visual Anomaly Detection system inspired by the PatchCore framework (Roth et al., CVPR 2022). It is designed to inspect industrial components on manufacturing assembly lines, detecting surface flaws without requiring prior defect labels during training.
+Repository triển khai hệ thống one-class PatchCore-style lấy cảm hứng từ PatchCore (Roth et al., CVPR 2022). Hệ thống kiểm tra ảnh linh kiện công nghiệp bằng normal reference, không yêu cầu defect labels ở bước build model.
 
 ### Core Architectural Principles
 
@@ -61,21 +61,21 @@ flowchart TD
 
 ### 3.1 Data Pipeline (`src/data/`)
 - `validation.py`: Tách validator reference-only khỏi validator locked evaluation. Reference chỉ kiểm tra `train/good`; evaluation mới kiểm tra test và ground-truth mask.
-- `dataset.py`: PyTorch `ImageFolderDataset` consuming paths directly from the manifest.
-- `transforms.py`: Configurable `PreprocessingConfig` defining input image resolution, normalization vectors, and torchvision transformations.
+   - `dataset.py`: `ImageFolderDataset` đọc path trực tiếp từ manifest.
+   - `transforms.py`: `PreprocessingConfig` định nghĩa kích thước ảnh, vector normalize và torchvision transform.
 
 ### 3.2 Model Building Pipeline (`src/training/` & `src/model/`)
-- `trainer.py`: Coordinates the offline model building process. Does not run gradient backpropagation; instead, runs forward feature extraction through a frozen backbone, builds the memory bank via coreset subsampling, and calibrates operating thresholds.
+- `trainer.py`: Điều phối build model offline; không backpropagation, chỉ forward qua backbone frozen, tạo memory bank bằng coreset và calibration threshold.
 - `calibration.py`: Tách Reference / Dev / Calibration bằng seed cố định và tính P99 heuristic normal-only cho AUTO_PASS cùng pixel threshold.
-- `artifacts.py`: Implements `ModelArtifact`, `ThresholdPolicy`, `SplitManifest`, and `ModelMetadata`.
+- `artifacts.py`: Định nghĩa `ModelArtifact`, `ThresholdPolicy`, `SplitManifest` và `ModelMetadata`.
 
 ### 3.3 Evaluation Pipeline (`src/evaluation/`)
-- `evaluator.py`: **Report-Only** evaluation engine. Strictly forbidden from modifying or tuning model thresholds based on test performance.
-- `metrics.py`: Evaluates performance across 3 distinct tiers: Detection, Localization, and Operational Quality Control.
-- `aupro.py`: Computes Area Under the Per-Region Overlap curve (up to `max_fpr=0.3`), ensuring localized defects of varying scales are evaluated without size bias.
+- `evaluator.py`: Engine đánh giá **report-only**, không sửa hoặc tune threshold theo test.
+- `metrics.py`: Tính ba nhóm Detection, Localization và Operational QC.
+- `aupro.py`: Tính AUPRO tới `max_fpr=0.3` cho localization.
 
 ### 3.4 Serving Pipeline (`src/inference/` & `src/api/`)
 - `detector.py`: Runtime inspection engine. Supports both single-image inspection and high-throughput batched inference (`inspect_batch`).
 - `registry.py`: Resolve category hoặc line_id qua production pointer, không fallback sang category khác; thiếu mapping thì báo lỗi.
-- `app.py`: FastAPI server exposing `/health`, `/health/live`, `/health/ready`, `/models`, `/inspect`, and `/inspect/batch`. Pure transport and validation layer.
-- `schemas.py`: Pydantic data contracts ensuring clean API responses.
+- `app.py`: FastAPI server với `/health`, `/health/live`, `/health/ready`, `/models`, `/inspect` và `/inspect/batch`; không chứa ML math.
+- `schemas.py`: Pydantic contract cho response API.

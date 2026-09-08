@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from src.evaluation.metrics import calculate_3tier_metrics
 
 
@@ -42,3 +43,13 @@ def test_calculate_3tier_metrics_logic() -> None:
     assert cm["tn"] == 2
     assert cm["fp"] == 0
     assert cm["fn"] == 0
+
+
+def test_metrics_reject_invalid_labels_and_shape() -> None:
+    """Metrics phải fail fast khi label hoặc kích thước map không hợp lệ."""
+    masks = np.zeros((2, 4, 4), dtype=bool)
+    maps = np.zeros((2, 4, 5), dtype=np.float32)
+    with pytest.raises(ValueError, match="nhãn 0"):
+        calculate_3tier_metrics([0, 2], [0.1, 0.2], masks, masks, threshold=0.5)
+    with pytest.raises(ValueError, match="cùng số mẫu"):
+        calculate_3tier_metrics([0, 1], [0.1, 0.2], masks, maps, threshold=0.5)

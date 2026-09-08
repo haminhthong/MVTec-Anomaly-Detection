@@ -66,13 +66,13 @@ def test_validate_mvtec_missing_mask_raises_error(tmp_path: Path) -> None:
     """Requirement: defect test image missing ground-truth mask MUST fail."""
     create_dummy_mvtec_structure(tmp_path, category="cable", include_masks=False)
 
-    with pytest.raises(DatasetValidationError, match="Missing ground-truth mask|Missing ground_truth directory"):
+    with pytest.raises(DatasetValidationError, match="ground_truth"):
         validate_mvtec_category(data_dir=tmp_path, category="cable")
 
 
 def test_validate_mvtec_nonexistent_category(tmp_path: Path) -> None:
     """Category not found raises FileNotFoundError."""
-    with pytest.raises(FileNotFoundError, match="not found under"):
+    with pytest.raises(FileNotFoundError, match="Không tìm thấy category"):
         validate_mvtec_category(data_dir=tmp_path, category="nonexistent_cat")
 
 
@@ -82,5 +82,5 @@ def test_validate_mvtec_empty_train_raises_error(tmp_path: Path) -> None:
     (cat_dir / "train" / "good").mkdir(parents=True, exist_ok=True)
     (cat_dir / "test" / "good").mkdir(parents=True, exist_ok=True)
 
-    with pytest.raises(DatasetValidationError, match="No valid images found in train directory"):
+    with pytest.raises(DatasetValidationError, match="Không có ảnh hợp lệ trong train/good"):
         validate_mvtec_category(data_dir=tmp_path, category="bottle")

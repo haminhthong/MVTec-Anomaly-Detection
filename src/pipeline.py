@@ -16,7 +16,7 @@ from typing import Any
 
 from PIL import Image
 
-from .config import TrainConfig, parse_args
+from .config import TrainConfig
 from .data.manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
 from .data.validation import (
     validate_locked_evaluation,
@@ -84,6 +84,7 @@ def run_evaluation_pipeline(
     model_dir: str | Path = "models",
     data_dir: str | Path = "data/raw",
     output_report: str | Path | None = None,
+    reopen: bool = False,
 ) -> dict[str, Any]:
     """Đánh giá locked test theo chế độ report-only, không retune policy."""
     target_cat = manifest.category if manifest else category
@@ -95,6 +96,7 @@ def run_evaluation_pipeline(
         model_dir=model_dir,
         data_dir=data_dir,
         output_report=output_report,
+        reopen=reopen,
     )
     return metrics
 
@@ -122,6 +124,7 @@ def run_end_to_end_pipeline(
     models_dir: str | Path = "models",
     output_report: str | Path | None = None,
     model_version: str = "1.0.0",
+    reopen: bool = False,
 ) -> dict[str, Any]:
     """Chạy Reference -> Training -> Locked Evaluation theo đúng boundary."""
     print(f"\n{'='*70}\n [MASTER PIPELINE] Executing end-to-end lifecycle for '{category.upper()}'\n{'='*70}")
@@ -144,6 +147,7 @@ def run_end_to_end_pipeline(
         category=category,
         model_dir=models_dir,
         output_report=output_report,
+        reopen=reopen,
     )
     print(f"\n[MASTER PIPELINE] Finished end-to-end execution for '{category}'.")
     return metrics
@@ -162,6 +166,7 @@ def main() -> None:
     run_parser.add_argument("--models-dir", default="models", help="Models directory")
     run_parser.add_argument("--output-report", default=None, help="Report file path")
     run_parser.add_argument("--model-version", default="1.0.0", help="Immutable model release version")
+    run_parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # data: kiểm tra dữ liệu.
     data_parser = subparsers.add_parser("data", help="Validate data and generate manifest")
@@ -182,6 +187,7 @@ def main() -> None:
     eval_parser.add_argument("--models-dir", default="models", help="Models directory")
     eval_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
     eval_parser.add_argument("--output-report", default=None, help="Report file path")
+    eval_parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # serve: khởi động API.
     serve_parser = subparsers.add_parser("serve", help="Launch FastAPI REST server")
@@ -198,6 +204,7 @@ def main() -> None:
             models_dir=args.models_dir,
             output_report=args.output_report,
             model_version=args.model_version,
+            reopen=args.reopen_locked_test,
         )
     elif args.command == "data":
         run_data_pipeline(data_dir=args.data_dir, category=args.category)
@@ -210,6 +217,7 @@ def main() -> None:
             model_dir=args.models_dir,
             data_dir=args.data_dir,
             output_report=args.output_report,
+            reopen=args.reopen_locked_test,
         )
     elif args.command == "serve":
         import uvicorn

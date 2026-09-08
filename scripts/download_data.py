@@ -32,6 +32,9 @@ ALL_CATEGORIES = [
 
 def download_category(category: str, output_dir: Path) -> None:
     """Tải một category và ghi metadata nguồn dữ liệu ở thư mục raw."""
+    category = category.strip().lower()
+    if category not in ALL_CATEGORIES:
+        raise ValueError(f"Category không được hỗ trợ: {category!r}.")
     print(f"Downloading MVTec AD category '{category}' into '{output_dir}'...")
     snapshot_download(
         repo_id=DATASET,
@@ -70,11 +73,12 @@ def main():
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    if args.category.lower() == "all":
+    category = args.category.strip().lower()
+    if category == "all":
         for cat in ALL_CATEGORIES:
             download_category(cat, out)
     else:
-        download_category(args.category, out)
+        download_category(category, out)
 
 
 if __name__ == "__main__":

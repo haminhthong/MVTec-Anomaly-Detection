@@ -1,4 +1,4 @@
-"""CLI Entrypoint for Evaluation Pipeline (Report-Only)."""
+"""Điểm vào CLI cho pipeline đánh giá locked test dạng report-only."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def main() -> None:
-    """Entry point for 'python -m src.evaluate'."""
+    """Điểm vào của lệnh ``python -m src.evaluate``."""
     parser = argparse.ArgumentParser(description="Evaluate PatchCore-style model on test split (REPORT-ONLY)")
     parser.add_argument(
         "--category",

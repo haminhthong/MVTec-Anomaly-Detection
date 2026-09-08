@@ -1,17 +1,17 @@
-# Data Flow Specification
+# Luồng dữ liệu và tensor
 
-This document details the transformation of data tensors, representations, and contracts across each stage of the system.
+Tài liệu mô tả transformation của tensor, manifest và contract qua từng pipeline.
 
 ---
 
 ## 1. Offline Model Building Data Flow
 
 ```
-Input Normal Training Images (N images, e.g., 209 images for bottle)
+Input Normal Training Images (N ảnh từ train/good)
        ↓  (Reference / Dev / Calibration split, seed=42)
 Reference Set                         Dev Set + Calibration Set
        ↓                                                 ↓
-Resize to config.preprocessing.image_size (224x224)       ↓ (same preprocessing)
+Resize theo config.preprocessing.image_size (mặc định 224x224) ↓ (cùng preprocessing)
 ToTensor + ImageNet Normalize                            ↓
 Input Tensor: [Batch, 3, 224, 224]                       ↓
        ↓                                                 ↓
@@ -22,17 +22,17 @@ Forward pass through frozen FeatureExtractor             ↓
 - Channel concatenation: [Batch, 384, 28, 28]            ↓
 - Reshape to patch embeddings: [Batch * 784, 384]        ↓
        ↓                                                 ↓
-Accumulated Full Memory: [130,928 patches, 384D]         ↓
+Accumulated Full Memory: [N_reference * H * W patches, D] ↓
        ↓                                                 ↓
 Random Projection (Johnson-Lindenstrauss)               ↓
-Projected features: [130,928, 64D]                       ↓
+Projected features: [N_reference * H * W, 64D]            ↓
        ↓                                                 ↓
-Greedy K-Center Selection (coreset_size=1,000)
+Greedy K-Center Selection (coreset_size; mặc định K=1,000)
        ↓                                                 ↓
-Selected Indices: [1,000 integers]                       ↓
+Selected Indices: [K integers]                            ↓
        ↓                                                 ↓
 Slice original features at selected indices              ↓
-Compact Memory Bank: [1,000, 384D]                       ↓
+Compact Memory Bank: [K, D]                               ↓
        ↓                                                 ↓
 Fitted NearestNeighbors (1-NN, metric='euclidean') ←──────┘
        ↓
@@ -48,7 +48,7 @@ Compute ThresholdPolicy:
        ↓
 Serialize to models/releases/<category>-v<version>/:
   - config.json (ModelArtifact metadata, ThresholdPolicy, PreprocessingConfig)
-  - memory_bank.npy ([1000, 384] float32 array)
+   - memory_bank.npy ([K, D] float32 array)
   - split_manifest.json (reproducible file lists and hashes)
 ```
 
@@ -57,23 +57,23 @@ Serialize to models/releases/<category>-v<version>/:
 ## 2. Serving Pipeline Data Flow (Inference)
 
 ```
-Incoming Image (PNG / JPEG / WebP / TIFF)
+Incoming Image (PNG / JPEG / WebP / TIFF; format thực tế do PIL hỗ trợ)
        ↓
 Validation & Decompression Bomb Protection (PIL Image.open)
        ↓
 Preprocessing Transform:
-- Resize to target (e.g., 224x224)
-- ToTensor & Normalize: [1, 3, 224, 224]
+- Resize theo preprocessing config (mặc định 224x224)
+- ToTensor & Normalize: [1, 3, H, W]
        ↓
 Backbone Forward Pass (FeatureExtractor):
-- Spatial feature maps aligned and concatenated -> [784, 384D]
+- Spatial feature maps aligned và nối lại -> [H_patch * W_patch, D]
        ↓
 Nearest-Neighbor Query against MemoryBank:
-- Distances to nearest coreset patches: [784]
-- Reshape to spatial grid: [28, 28]
+- Distances tới coreset patch gần nhất: [H_patch * W_patch]
+- Reshape về spatial grid: [H_patch, W_patch]
        ↓
 Heatmap Smoothing:
-- Gaussian Filter (sigma=1.0) -> Smoothed Anomaly Heatmap [28, 28]
+- Gaussian Filter theo artifact (mặc định sigma=1.0)
        ↓
 Image Scoring & Defect Localization:
 - anomaly_score = Percentile(smoothed_heatmap, 99.0)
@@ -99,17 +99,20 @@ Output JSON Response (InspectionResponse)
 ## 3. High-Throughput Batch Inspection Flow
 
 ```
-N Images uploaded to POST /inspect/batch
+N ảnh upload tới POST /inspect/batch
        ↓
-Batch Preprocessing -> Stacked Tensor: [N, 3, 224, 224]
+Quality gate từng ảnh
        ↓
-Single Forward Pass: FeatureExtractor(batch_tensor) -> [N * 784, 384D]
+Chỉ ảnh hợp lệ được preprocess -> Stacked Tensor: [N_valid, 3, H, W]
        ↓
-Single 1-NN Query against MemoryBank: [N * 784] distances
+Single Forward Pass: FeatureExtractor(batch_tensor) -> [N_valid * H_patch * W_patch, D]
        ↓
-Reshape to [N, 28, 28]
+Single 1-NN Query against MemoryBank: [N_valid * H_patch * W_patch] distances
+       ↓
+Reshape từng ảnh về [H_patch, W_patch]
        ↓
 Vectorized Heatmap Smoothing & Percentile Computation for each slice
        ↓
-Assembled BatchInspectionResponse with N structured results (Throughput: ~10 FPS on CPU, ~80+ FPS on GPU)
+Ghép BatchInspectionResponse giữ đúng thứ tự input; ảnh không đạt quality trả RECAPTURE_REQUIRED.
+Throughput phải đo bằng scripts/benchmark_inference.py theo hardware cụ thể.
 ```

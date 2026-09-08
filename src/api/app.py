@@ -56,7 +56,7 @@ def _resolve_request_category(category: str | None, line_id: str | None) -> str:
 
 
 def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
-    """Validate image bytes against decompression bombs and format errors."""
+    """Kiểm tra bytes ảnh, giới hạn decompression bomb và lỗi định dạng."""
     if len(raw_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
@@ -76,7 +76,7 @@ def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
 
 @app.get("/health", response_model=HealthResponse, tags=["Monitoring"])
 def health() -> HealthResponse:
-    """Basic health check endpoint."""
+    """Endpoint kiểm tra health cơ bản của service."""
     categories = registry.list_categories()
     ready = len(categories) > 0
     version = registry.version(categories[0]) if categories else "not_trained"
@@ -90,13 +90,13 @@ def health() -> HealthResponse:
 
 @app.get("/health/live", tags=["Monitoring"])
 def health_live() -> dict[str, str]:
-    """Liveness probe."""
+    """Liveness probe xác nhận process còn hoạt động."""
     return {"status": "alive"}
 
 
 @app.get("/health/ready", response_model=ReadinessResponse, tags=["Monitoring"])
 def health_ready() -> ReadinessResponse:
-    """Readiness probe checking model availability and runtime index."""
+    """Readiness probe kiểm tra artifact model và runtime index."""
     categories = registry.list_categories()
     if not categories:
         raise HTTPException(
@@ -122,7 +122,7 @@ def health_ready() -> ReadinessResponse:
 
 @app.get("/models", tags=["Model Registry"])
 def list_models() -> dict[str, Any]:
-    """List all categories with available trained models."""
+    """Liệt kê category có artifact model hợp lệ."""
     categories = registry.list_categories()
     return {
         "total_categories": len(categories),
@@ -132,7 +132,7 @@ def list_models() -> dict[str, Any]:
 
 @app.get("/models/{category}", tags=["Model Registry"])
 def get_model_details(category: str) -> dict[str, Any]:
-    """Get metadata for a specific category model."""
+    """Lấy metadata của model thuộc một category cụ thể."""
     try:
         return registry.get_metadata(category)
     except ModelNotFoundError as exc:
@@ -153,7 +153,7 @@ async def inspect(
         bool, Form(description="Whether to include Base64 heatmap overlay string")
     ] = True,
 ) -> InspectionResponse:
-    """Inspect single product image and return operational QC decision."""
+    """Inspect một ảnh sản phẩm và trả quyết định QC vận hành."""
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     image = _validate_and_load_image(content)
 
@@ -186,7 +186,7 @@ async def inspect_batch(
         bool, Form(description="Whether to include Base64 heatmap overlay string")
     ] = False,
 ) -> BatchInspectionResponse:
-    """High-throughput batch inspection endpoint for factory production lines."""
+    """Endpoint inspect batch cho production line."""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided for batch inspection.")
     if len(files) > MAX_BATCH_FILES:

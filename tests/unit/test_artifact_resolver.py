@@ -38,3 +38,21 @@ def test_registry_empty_dir(tmp_path: Path) -> None:
     """Test registry returns empty list for empty base dir."""
     registry = ModelRegistry(base_dir=tmp_path / "empty_models")
     assert registry.list_categories() == []
+
+
+def test_registry_rejects_path_traversal_and_external_pointer(tmp_path: Path) -> None:
+    """Category và production pointer không được thoát khỏi model root."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    registry = ModelRegistry(base_dir=models_dir)
+
+    with pytest.raises(ModelNotFoundError):
+        registry.resolve_category_dir("../outside")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (models_dir / "production.json").write_text(
+        json.dumps({"categories": {"bottle": "../outside"}}), encoding="utf-8"
+    )
+    with pytest.raises(ModelNotFoundError, match="production pointer"):
+        registry.resolve_category_dir("bottle")

@@ -1,4 +1,4 @@
-"""Shared utility functions and logging setup."""
+"""Tiện ích dùng chung và cấu hình logging."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ LOGGER: logging.Logger = logging.getLogger("mvtec_anomaly_detection")
 
 
 def save_json(path: str | Path, payload: dict[str, Any]) -> None:
-    """Save dictionary to formatted UTF-8 JSON file."""
+    """Lưu dictionary thành file JSON UTF-8 có format dễ đọc."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

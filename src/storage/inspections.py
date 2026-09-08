@@ -10,6 +10,10 @@ import sqlite3
 from typing import Any
 
 
+ALLOWED_DECISIONS = {"RECAPTURE_REQUIRED", "AUTO_PASS", "HUMAN_REVIEW"}
+ALLOWED_QC_OUTCOMES = {"QC_PASS", "QC_REJECT"}
+
+
 class InspectionStore:
     """Lưu evidence model và outcome QC trong một database local."""
 
@@ -23,6 +27,7 @@ class InspectionStore:
         """Mở và đóng connection rõ ràng để Windows không khóa file database."""
         connection = sqlite3.connect(self.database_path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
             connection.commit()
@@ -61,6 +66,8 @@ class InspectionStore:
 
     def record_inspection(self, result: dict[str, Any], policy_version: str = "v1") -> None:
         """Ghi prediction; không bao giờ append prediction vào memory bank."""
+        if result.get("decision") not in ALLOWED_DECISIONS:
+            raise ValueError(f"decision không hợp lệ: {result.get('decision')!r}.")
         scores = result.get("scores", {})
         localization = result.get("localization", {})
         model = result.get("model", {})
@@ -68,10 +75,22 @@ class InspectionStore:
         with self._connection() as connection:
             connection.execute(
                 """
-                INSERT OR REPLACE INTO inspections(
+                INSERT INTO inspections(
                     inspection_id,line_id,camera_id,inspected_at,model_version,policy_version,
                     anomaly_score,anomaly_extent,decision,image_ref,overlay_ref,payload_json
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(inspection_id) DO UPDATE SET
+                    line_id=excluded.line_id,
+                    camera_id=excluded.camera_id,
+                    inspected_at=excluded.inspected_at,
+                    model_version=excluded.model_version,
+                    policy_version=excluded.policy_version,
+                    anomaly_score=excluded.anomaly_score,
+                    anomaly_extent=excluded.anomaly_extent,
+                    decision=excluded.decision,
+                    image_ref=excluded.image_ref,
+                    overlay_ref=excluded.overlay_ref,
+                    payload_json=excluded.payload_json
                 """,
                 (
                     result["inspection_id"],
@@ -98,6 +117,10 @@ class InspectionStore:
         notes: str | None = None,
     ) -> None:
         """Ghi QC_PASS/QC_REJECT; human review là nguồn label độc lập."""
+        if not reviewer_id or not reviewer_id.strip():
+            raise ValueError("reviewer_id không được để trống.")
+        if final_outcome not in ALLOWED_QC_OUTCOMES:
+            raise ValueError(f"final_outcome không hợp lệ: {final_outcome!r}.")
         with self._connection() as connection:
             connection.execute(
                 """

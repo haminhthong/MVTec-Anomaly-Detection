@@ -106,7 +106,7 @@ def test_inspect_single_image(setup_api_model: str) -> None:
     assert res.status_code == 200
     data = res.json()
     assert data["category"] == setup_api_model
-    assert data["decision"] in {"PASS", "REVIEW", "FAIL"}
+    assert data["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
     assert "scores" in data
     assert "localization" in data
 

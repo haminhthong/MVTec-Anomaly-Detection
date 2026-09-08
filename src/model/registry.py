@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .artifact_resolver import ModelNotFoundError, resolve_artifact_dir
+from ..path_safety import ensure_safe_segment
 
 if TYPE_CHECKING:
     from ..inference.detector import AnomalyDetector
@@ -29,7 +30,15 @@ class ModelRegistry:
         if production_path.exists():
             try:
                 production = json.loads(production_path.read_text(encoding="utf-8"))
-                categories.update(production.get("categories", {}).keys())
+                category_entries = production.get("categories", {}) if isinstance(production, dict) else {}
+                if isinstance(category_entries, dict):
+                    for raw_category in category_entries:
+                        try:
+                            category = ensure_safe_segment(str(raw_category), "category")
+                            resolve_artifact_dir(model_root=self.base_dir, category=category)
+                        except (ModelNotFoundError, ValueError):
+                            continue
+                        categories.add(category)
             except (OSError, json.JSONDecodeError):
                 # Resolve cụ thể sẽ báo lỗi rõ hơn; list không làm service crash.
                 pass
@@ -54,12 +63,23 @@ class ModelRegistry:
             data = json.loads(pointer_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ModelNotFoundError(f"production.json không hợp lệ: {exc}") from exc
-        entry = data.get("lines", {}).get(line_id)
+        line_entries = data.get("lines", {}) if isinstance(data, dict) else {}
+        if not isinstance(line_entries, dict):
+            raise ModelNotFoundError("production.json phải chứa object 'lines'.")
+        entry = line_entries.get(line_id)
         if isinstance(entry, str):
-            return entry, None
+            try:
+                return ensure_safe_segment(entry, "category"), None
+            except ValueError as exc:
+                raise ModelNotFoundError(str(exc)) from exc
         if isinstance(entry, dict) and entry.get("category"):
             release_id = entry.get("release_id")
-            return str(entry["category"]), str(release_id) if release_id else None
+            try:
+                mapped_category = ensure_safe_segment(str(entry["category"]), "category")
+                safe_release_id = ensure_safe_segment(str(release_id), "release_id") if release_id else None
+            except ValueError as exc:
+                raise ModelNotFoundError(str(exc)) from exc
+            return mapped_category, safe_release_id
         raise ModelNotFoundError(f"Không có mapping cho line_id '{line_id}'.")
 
     def resolve_line(self, line_id: str) -> str:
@@ -95,7 +115,10 @@ class ModelRegistry:
             if mapped_category != category:
                 raise ValueError(f"line_id '{line_id}' không map tới category '{category}'.")
             if release_id:
-                release_dir = self.base_dir / "releases" / release_id
+                releases_root = (self.base_dir / "releases").resolve()
+                release_dir = (releases_root / release_id).resolve()
+                if release_dir == releases_root or releases_root not in release_dir.parents:
+                    raise ModelNotFoundError(f"release_id '{release_id}' trỏ ra ngoài thư mục releases.")
                 target_dir = resolve_artifact_dir(model_root=release_dir)
                 cache_key = f"line:{line_id}:{release_id}"
 

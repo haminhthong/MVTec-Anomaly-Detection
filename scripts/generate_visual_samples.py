@@ -7,6 +7,7 @@ với một ngưỡng AUTO_PASS và diện tích vùng vượt pixel threshold.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -26,13 +27,13 @@ from src.inference.detector import AnomalyDetector
 
 
 def generate_sample_comparison(
+    detector: AnomalyDetector,
     image_path: Path,
     mask_path: Path | None,
     output_path: Path,
     title_suffix: str = "",
 ) -> None:
     """Sinh ảnh so sánh 4 khung hình và lưu ra file PNG."""
-    detector = AnomalyDetector(model_dir="models")
     image = Image.open(image_path).convert("RGB")
     res = detector.inspect(image, include_overlay=False)
 
@@ -124,23 +125,46 @@ def generate_sample_comparison(
 
 
 def main() -> None:
-    """Tạo các ảnh trực quan hóa mẫu cho lỗi hỏng lớn và sản phẩm chuẩn."""
-    raw_dir = Path("data/raw/bottle")
-    output_dir = Path("reports/sample_outputs")
+    """Tạo ảnh input/mask/heatmap/overlay cho một category."""
+    parser = argparse.ArgumentParser(description="Sinh visual sample cho MVTec AD")
+    parser.add_argument("--category", default="bottle", help="Category cần trực quan hóa")
+    parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
+    parser.add_argument("--model-dir", default="models", help="Thư mục model release")
+    parser.add_argument("--output-dir", default="reports/sample_outputs", help="Thư mục output")
+    args = parser.parse_args()
 
-    defect_img = raw_dir / "test" / "broken_large" / "000.png"
-    defect_mask = raw_dir / "ground_truth" / "broken_large" / "000_mask.png"
-    if defect_img.exists():
+    raw_dir = Path(args.data_dir) / args.category
+    output_dir = Path(args.output_dir)
+    detector = AnomalyDetector(model_dir=args.model_dir, category=args.category)
+
+    test_root = raw_dir / "test"
+    defect_dirs = sorted(path for path in test_root.iterdir() if path.is_dir() and path.name != "good") if test_root.is_dir() else []
+    if defect_dirs:
+        defect_type = defect_dirs[0].name
+        defect_images = sorted(defect_dirs[0].glob("*.png"))
+        defect_img = defect_images[0] if defect_images else None
+        defect_mask = (
+            raw_dir / "ground_truth" / defect_type / f"{defect_img.stem}_mask.png"
+            if defect_img is not None
+            else None
+        )
+    else:
+        defect_type = "unknown"
+        defect_img = None
+        defect_mask = None
+    if defect_img is not None and defect_img.exists():
         generate_sample_comparison(
+            detector,
             defect_img,
             defect_mask,
             output_dir / "inspection_defect_sample.png",
-            title_suffix="Broken Large (Vỡ lớn viền miệng chai)",
+            title_suffix=defect_type,
         )
 
     good_img = raw_dir / "test" / "good" / "000.png"
     if good_img.exists():
         generate_sample_comparison(
+            detector,
             good_img,
             None,
             output_dir / "inspection_good_sample.png",
