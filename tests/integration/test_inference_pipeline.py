@@ -1,4 +1,4 @@
-"""Integration tests for inference pipeline."""
+"""Kiểm thử tích hợp cho luồng suy luận."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ from src.inference.detector import AnomalyDetector
 
 
 def test_inference_with_artifact(tmp_path: Path) -> None:
-    """Test AnomalyDetector loads artifact and returns stable schema."""
+    """Đảm bảo detector đọc artifact và trả schema V1 ổn định."""
     model_dir = tmp_path / "models" / "test_box"
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # Dummy memory bank [20, 384]
+    # Memory bank giả lập [20, 384].
     memory = np.random.randn(20, 384).astype(np.float32)
     np.save(model_dir / "memory_bank.npy", memory)
 
-    # config.json
+    # Artifact config tương thích với schema cũ.
     config_data = {
         "artifact_schema_version": 4,
         "category": "test_box",
@@ -41,8 +41,8 @@ def test_inference_with_artifact(tmp_path: Path) -> None:
     (model_dir / "config.json").write_text(json.dumps(config_data), encoding="utf-8")
 
     det = AnomalyDetector(model_dir=str(model_dir))
-    assert det.threshold == 3.5
-    assert det.review_threshold == 2.8
+    assert det.auto_pass_threshold == 3.5
+    assert det.review_threshold == 3.5
     assert det.pixel_threshold == 3.0
     assert det.memory_bank.size == 20
 
@@ -58,6 +58,6 @@ def test_inference_with_artifact(tmp_path: Path) -> None:
     assert "scores" in res
     assert "localization" in res
     assert "model" in res
-    assert res["decision"] in {"PASS", "REVIEW", "FAIL"}
-    assert res["severity"] in {"PASS", "REVIEW", "FAIL_MINOR", "FAIL_MAJOR"}
+    assert res["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
+    assert res["severity"] is None
     assert res["overlay_b64"].startswith("data:image/png;base64,")

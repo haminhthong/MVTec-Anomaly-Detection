@@ -1,16 +1,17 @@
 """Inference Latency, Throughput, and Resource Footprint Benchmark.
 
-Evaluates:
-- Single-image latency (Mean, Median, P95, Min, Max)
-- Batched inference latency & throughput (images/second)
-- Memory bank array memory footprint in RAM & on disk
-- CPU / GPU device utilization
+Đo lường:
+- Độ trễ một ảnh (Mean, Median, P95, Min, Max).
+- Độ trễ và throughput khi suy luận theo batch (ảnh/giây).
+- Dung lượng memory bank trong RAM và trên đĩa.
+- Thiết bị chạy và metadata runtime CPU/PyTorch.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import platform
 from pathlib import Path
 import sys
 import time
@@ -36,13 +37,15 @@ def benchmark_category(
     num_runs: int = 30,
     batch_sizes: tuple[int, ...] = (1, 4, 8),
 ) -> dict:
-    """Run comprehensive performance benchmarking for an anomaly detector."""
+    """Đo hiệu năng đầy đủ của detector và trả về metadata runtime."""
     print("=" * 70)
     print(f"   INFERENCE PERFORMANCE BENCHMARK: {category.upper()}")
     print("=" * 70)
 
     detector = AnomalyDetector(model_dir=model_dir, category=category)
     device = detector.dev
+    image_size = list(detector.preprocessing_config.image_size)
+    cpu_name = platform.processor() or platform.machine() or "unknown"
     root = find_category_root(category=category)
     sample_images = sorted((root / "test" / "good").glob("*.png"))
 
@@ -65,6 +68,10 @@ def benchmark_category(
     file_size_mb = file_path.stat().st_size / (1024 * 1024) if file_path.exists() else 0.0
 
     print(f"Device               : {device.upper()}")
+    print(f"CPU                  : {cpu_name}")
+    print(f"PyTorch              : {torch.__version__}")
+    print(f"Torch threads        : {torch.get_num_threads()}")
+    print(f"Image size           : {image_size[0]}x{image_size[1]}")
     print(f"Memory Bank Shape    : [{bank_size_patches}, {bank_dim}]")
     print(f"Memory Bank RAM      : {bank_ram_mb:.2f} MB")
     print(f"Artifact File Size   : {file_size_mb:.2f} MB on disk")
@@ -132,6 +139,12 @@ def benchmark_category(
     return {
         "category": category,
         "device": device,
+        "runtime": {
+            "cpu": cpu_name,
+            "pytorch": torch.__version__,
+            "torch_threads": torch.get_num_threads(),
+            "image_size": image_size,
+        },
         "memory_bank": {
             "patches": bank_size_patches,
             "dim": bank_dim,
