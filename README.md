@@ -5,6 +5,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7.1-ee4c2c.svg)](https://pytorch.org/)
 [![Torchvision](https://img.shields.io/badge/Torchvision-0.22.1-ee4c2c.svg)](https://pytorch.org/vision/stable/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688.svg)](https://fastapi.tiangolo.com/)
+[![httpx](https://img.shields.io/badge/httpx-0.28.1-2E8B57.svg)](https://www.python-httpx.org/)
 [![NumPy](https://img.shields.io/badge/NumPy-2.2.6-013243.svg)](https://numpy.org/)
 [![scikit--learn](https://img.shields.io/badge/scikit--learn-1.7.1-F7931E.svg)](https://scikit-learn.org/)
 [![SciPy](https://img.shields.io/badge/SciPy-1.15.3-8CAAE6.svg)](https://scipy.org/)
