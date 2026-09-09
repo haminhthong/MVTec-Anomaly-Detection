@@ -127,6 +127,7 @@ def test_evaluation_never_calls_calibration(dummy_mvtec_dataset: tuple[Path, str
             manifest=manifest,
             artifact=artifact,
             model_dir=models_dir / category,
+            output_report=tmp_path / "reports" / category / "evaluation.json",
         )
 
     mock_calib.assert_not_called()

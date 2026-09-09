@@ -56,8 +56,9 @@ def test_train_artifact_generation(tmp_path: Path) -> None:
 
     # Verify split manifest
     split = SplitManifest.load(cat_dir / "split_manifest.json")
-    assert split.memory_count + split.calibration_count == 25
+    assert split.memory_count + split.dev_count + split.calibration_count == 25
     assert len(split.memory_files) == split.memory_count
+    assert len(split.dev_files) == split.dev_count
     assert len(split.calibration_files) == split.calibration_count
 
     # Verify memory bank

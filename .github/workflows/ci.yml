@@ -6,9 +6,20 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,12 +30,29 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Cache torchvision ImageNet weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/torch/hub/checkpoints
+          key: torchvision-resnet18-imagenet1k-v1
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          python -m pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple \
+            "torch==2.7.1+cpu" \
+            "torchvision==0.22.1+cpu"
+          grep -Ev '^(torch|torchvision)==' requirements.txt > "${RUNNER_TEMP}/requirements-no-torch.txt"
+          python -m pip install -r "${RUNNER_TEMP}/requirements-no-torch.txt"
+          python -m pip check
+
+      - name: Warm up required torchvision weights
+        run: python -c "from torchvision.models import ResNet18_Weights, resnet18; resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)"
+
+      - name: Compile Python sources
+        run: python -m compileall -q src scripts tests
 
       - name: Run Pytest Test Suite
-        run: |
-          python -m pytest -v
+        run: python -m pytest -q

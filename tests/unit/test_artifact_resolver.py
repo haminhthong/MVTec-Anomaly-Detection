@@ -56,3 +56,39 @@ def test_registry_rejects_path_traversal_and_external_pointer(tmp_path: Path) ->
     )
     with pytest.raises(ModelNotFoundError, match="production pointer"):
         registry.resolve_category_dir("bottle")
+
+
+def test_line_release_resolves_without_category_pointer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Line-specific immutable release không phụ thuộc category pointer."""
+    models_dir = tmp_path / "models"
+    release_dir = models_dir / "releases" / "bottle-v2.0.0"
+    release_dir.mkdir(parents=True)
+    (release_dir / "config.json").write_text(
+        json.dumps({"category": "bottle", "version": "2.0.0"}), encoding="utf-8"
+    )
+    np.save(release_dir / "memory_bank.npy", np.zeros((2, 384), dtype=np.float32))
+    (models_dir / "production.json").write_text(
+        json.dumps(
+            {
+                "categories": {},
+                "lines": {
+                    "line-01": {
+                        "category": "bottle",
+                        "release_id": "bottle-v2.0.0",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeDetector:
+        def __init__(self, model_dir: Path) -> None:
+            self.model_dir = model_dir
+
+    monkeypatch.setattr("src.inference.detector.AnomalyDetector", FakeDetector)
+    registry = ModelRegistry(base_dir=models_dir)
+
+    detector = registry.get_detector("bottle", line_id=" line-01 ")
+
+    assert detector.model_dir == release_dir

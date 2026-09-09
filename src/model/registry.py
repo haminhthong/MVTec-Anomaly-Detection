@@ -56,6 +56,7 @@ class ModelRegistry:
         """Resolve line thành category và release_id đã đăng ký."""
         if not line_id or not line_id.strip():
             raise ValueError("line_id không được để trống.")
+        normalized_line_id = line_id.strip()
         pointer_path = self.base_dir / "production.json"
         if not pointer_path.exists():
             raise ModelNotFoundError(f"Chưa cấu hình line_id '{line_id}'.")
@@ -66,7 +67,7 @@ class ModelRegistry:
         line_entries = data.get("lines", {}) if isinstance(data, dict) else {}
         if not isinstance(line_entries, dict):
             raise ModelNotFoundError("production.json phải chứa object 'lines'.")
-        entry = line_entries.get(line_id)
+        entry = line_entries.get(normalized_line_id)
         if isinstance(entry, str):
             try:
                 return ensure_safe_segment(entry, "category"), None
@@ -80,7 +81,7 @@ class ModelRegistry:
             except ValueError as exc:
                 raise ModelNotFoundError(str(exc)) from exc
             return mapped_category, safe_release_id
-        raise ModelNotFoundError(f"Không có mapping cho line_id '{line_id}'.")
+        raise ModelNotFoundError(f"Không có mapping cho line_id '{normalized_line_id}'.")
 
     def resolve_line(self, line_id: str) -> str:
         """Resolve line_id server-side và trả về category của line."""
@@ -108,10 +109,12 @@ class ModelRegistry:
 
     def get_detector(self, category: str, line_id: str | None = None) -> AnomalyDetector:
         """Lấy detector đúng release, tự làm mới cache khi production pointer đổi."""
-        target_dir = self.resolve_category_dir(category)
+        target_dir: Path | None = None
         cache_key = category
+        normalized_line_id: str | None = None
         if line_id:
-            mapped_category, release_id = self.resolve_line_target(line_id)
+            normalized_line_id = line_id.strip()
+            mapped_category, release_id = self.resolve_line_target(normalized_line_id)
             if mapped_category != category:
                 raise ValueError(f"line_id '{line_id}' không map tới category '{category}'.")
             if release_id:
@@ -120,7 +123,13 @@ class ModelRegistry:
                 if release_dir == releases_root or releases_root not in release_dir.parents:
                     raise ModelNotFoundError(f"release_id '{release_id}' trỏ ra ngoài thư mục releases.")
                 target_dir = resolve_artifact_dir(model_root=release_dir)
-                cache_key = f"line:{line_id}:{release_id}"
+                cache_key = f"line:{normalized_line_id}:{release_id}"
+
+        # Line entry dạng legacy chỉ lưu category nên cần pointer category;
+        # line entry có release_id đã resolve ở trên thì không phụ thuộc pointer
+        # mutable của category.
+        if target_dir is None:
+            target_dir = self.resolve_category_dir(category)
 
         cached = self._cached_detectors.get(cache_key)
         if cached is not None and Path(cached.model_dir).resolve() == target_dir.resolve():
@@ -128,7 +137,7 @@ class ModelRegistry:
 
         from ..inference.detector import AnomalyDetector
 
-        if line_id and cache_key.startswith("line:"):
+        if normalized_line_id and cache_key.startswith("line:"):
             detector = AnomalyDetector(model_dir=target_dir)
         else:
             # Truyền base_dir để resolver lại production pointer đúng category.

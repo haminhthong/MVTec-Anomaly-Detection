@@ -1,5 +1,6 @@
 # Industrial Visual Anomaly Detection — PatchCore-style MVTec AD
 
+[![CI](https://github.com/haminhthong/Mvtec-Anomaly-Detection/actions/workflows/ci.yml/badge.svg)](https://github.com/haminhthong/Mvtec-Anomaly-Detection/actions/workflows/ci.yml)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7.1-ee4c2c.svg)](https://pytorch.org/)
 [![Torchvision](https://img.shields.io/badge/Torchvision-0.22.1-ee4c2c.svg)](https://pytorch.org/vision/stable/)
@@ -303,6 +304,9 @@ pytest -q
 ```
 
 `pytest` cần PyTorch/torchvision theo `requirements.txt`; nếu runtime hiện tại chưa có hai package này thì test ML/API không thể collection đầy đủ.
+
+CI tại `.github/workflows/ci.yml` dùng CPU wheels của đúng cặp PyTorch/Torchvision,
+chạy `pip check`, compile source và cache ImageNet weights trước khi chạy toàn bộ test.
 
 ### 7.7. Shortcut qua Makefile
 

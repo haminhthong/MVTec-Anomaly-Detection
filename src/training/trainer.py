@@ -123,6 +123,10 @@ def train_patchcore(
             train_good=list(manifest_obj.train_good),
         )
     )
+    # Giữ fingerprint của manifest caller truyền vào để các stage liên kết
+    # cùng một provenance. Với manifest combined, fingerprint này bao gồm
+    # toàn bộ dataset; fingerprint reference-only vẫn được lưu riêng bên dưới.
+    dataset_fingerprint = manifest_obj.fingerprint or reference_manifest.fingerprint
 
     reference_paths, dev_paths, calibration_paths = split_reference_dev_calibration(
         list(reference_manifest.train_good),
@@ -213,7 +217,7 @@ def train_patchcore(
         feature_layers=list(cfg.feature_layers),
         created_at=datetime.now(timezone.utc).isoformat(),
         device_used=device,
-        dataset_fingerprint=reference_manifest.fingerprint,
+        dataset_fingerprint=dataset_fingerprint,
         release_id=release_id,
     )
     artifact = ModelArtifact(
@@ -240,7 +244,7 @@ def train_patchcore(
             "note": "Heuristic normal-only upper-tail threshold; khong la bao dam FRR production.",
         },
         smooth_sigma=cfg.smooth_sigma,
-        dataset_fingerprint=reference_manifest.fingerprint,
+        dataset_fingerprint=dataset_fingerprint,
         capture_contract=cfg.capture_contract,
         inspection_policy={"auto_pass_only": True, "human_review_for_anomaly": True},
         reference_manifest={
@@ -256,7 +260,7 @@ def train_patchcore(
     split_manifest.save(release_dir / "split_manifest.json")
     reference_manifest.save(release_dir / "reference_manifest.json")
     artifact.save(release_dir)
-    write_integrity_manifest(release_dir, artifact, dataset_sha256=reference_manifest.fingerprint)
+    write_integrity_manifest(release_dir, artifact, dataset_sha256=dataset_fingerprint)
     _save_legacy_category_alias(release_dir, models_root, cfg.category)
     _update_production_pointer(models_root, cfg.category, release_id, cfg.line_id)
 
