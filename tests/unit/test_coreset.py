@@ -1,4 +1,4 @@
-"""Unit tests for Greedy K-Center Coreset selection."""
+"""Kiểm thử chọn coreset bằng Greedy K-Center."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from src.model.coreset import greedy_coreset, select_coreset_indices
 
 
 def test_select_coreset_indices() -> None:
-    """Test select_coreset_indices returns unique indices in valid range."""
+    """Kiểm tra index trả về là duy nhất và nằm trong phạm vi hợp lệ."""
     features = np.random.randn(100, 384).astype(np.float32)
     indices = select_coreset_indices(features, size=15, seed=42)
 
@@ -19,7 +19,7 @@ def test_select_coreset_indices() -> None:
 
 
 def test_greedy_coreset_size_and_dimension() -> None:
-    """Test coreset returns original dimensionality (384D) sliced from input."""
+    """Kiểm tra coreset giữ nguyên số chiều gốc 384D của feature."""
     features = np.random.randn(100, 384).astype(np.float32)
     selected = greedy_coreset(features, size=15, seed=42)
 
@@ -29,7 +29,7 @@ def test_greedy_coreset_size_and_dimension() -> None:
 
 
 def test_greedy_coreset_invalid_size() -> None:
-    """Test ValueError raised on size <= 0."""
+    """Kiểm tra size <= 0 phải phát sinh ValueError."""
     features = np.random.randn(20, 384).astype(np.float32)
     with pytest.raises(ValueError, match="Kích thước coreset"):
         select_coreset_indices(features, size=0)

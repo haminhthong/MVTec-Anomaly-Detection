@@ -1,4 +1,4 @@
-"""Calibration nhẹ và trainer torch được lazy-load khi xây model."""
+"""Hiệu chỉnh ngưỡng và trainer torch được nạp khi xây model."""
 
 from __future__ import annotations
 

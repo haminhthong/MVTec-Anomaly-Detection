@@ -14,7 +14,7 @@ data/raw/<category>/test + ground_truth
         +--> chỉ evaluate_category() đọc ở bước cuối
 ```
 
-`validate_reference_category()` không đọc test hoặc ground truth. `validate_locked_evaluation()`
+`validate_reference_category()` không đọc test hoặc ground truth. `validate_evaluation()`
 kiểm tra test/mask sau khi model đã được tạo.
 
 ## 2. Feature và score

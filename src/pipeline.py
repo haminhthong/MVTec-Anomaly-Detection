@@ -3,7 +3,7 @@
 Unifies the 4 canonical pipelines:
 1. DATA: kiểm tra dataset và tạo manifest
 2. MODEL BUILDING: feature frozen, coreset, calibration và lưu artifact
-3. EVALUATION: locked test report-only
+    3. EVALUATION: official test chỉ ghi report
 4. SERVING: suy luận inspection và REST API
 """
 
@@ -17,9 +17,9 @@ from typing import Any
 from PIL import Image
 
 from .config import TrainConfig
-from .data.manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
+from .data.manifest import DatasetManifest, EvaluationManifest, NormalReferenceManifest
 from .data.validation import (
-    validate_locked_evaluation,
+    validate_evaluation,
     validate_mvtec_category,
     validate_reference_category,
 )
@@ -78,15 +78,15 @@ def run_training_pipeline(
 
 
 def run_evaluation_pipeline(
-    manifest: DatasetManifest | LockedEvaluationManifest | None = None,
+    manifest: DatasetManifest | EvaluationManifest | None = None,
     artifact: ModelArtifact | str | Path | None = None,
     category: str = "bottle",
     model_dir: str | Path = "models",
     data_dir: str | Path = "data/raw",
     output_report: str | Path | None = None,
-    reopen: bool = False,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Đánh giá locked test theo chế độ report-only, không retune policy."""
+    """Đánh giá official test, không chỉnh lại policy đã calibration."""
     target_cat = manifest.category if manifest else category
     print(f"\n[PIPELINE 3/4: EVALUATION] Evaluating category '{target_cat}' (REPORT-ONLY)...")
     metrics = evaluate_category(
@@ -96,7 +96,7 @@ def run_evaluation_pipeline(
         model_dir=model_dir,
         data_dir=data_dir,
         output_report=output_report,
-        reopen=reopen,
+        overwrite=overwrite,
     )
     return metrics
 
@@ -106,7 +106,7 @@ def run_serving_pipeline(
     image: Image.Image | str | Path | None = None,
     model_dir: str | Path = "models",
 ) -> dict[str, Any]:
-    """Chạy quality gate và anomaly inspection trên một ảnh."""
+    """Kiểm tra chất lượng rồi chạy anomaly inspection trên một ảnh."""
     detector = AnomalyDetector(model_dir=model_dir, category=category)
     if image is None:
         raise ValueError("Must provide an image (PIL Image or file path) for inspection.")
@@ -123,11 +123,11 @@ def run_end_to_end_pipeline(
     data_dir: str | Path = "data/raw",
     models_dir: str | Path = "models",
     output_report: str | Path | None = None,
-    reopen: bool = False,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
     """Chạy Reference -> Training -> Official Evaluation theo đúng boundary."""
     print(f"\n{'='*70}\n [MASTER PIPELINE] Executing end-to-end lifecycle for '{category.upper()}'\n{'='*70}")
-    # Tách hai boundary: reference được resolve trước; locked test chỉ resolve sau train.
+    # Tách hai ranh giới: reference được lấy trước; official test chỉ lấy sau train.
     reference_manifest = validate_reference_category(data_dir=data_dir, category=category)
 
     # 1. MODEL BUILDING PIPELINE (chỉ nhận normal reference)
@@ -138,15 +138,15 @@ def run_end_to_end_pipeline(
         models_dir=models_dir,
     )
 
-    # 2. LOCKED EVALUATION PIPELINE (test/mask chỉ được đọc ở boundary này)
-    locked_manifest = validate_locked_evaluation(data_dir=data_dir, category=category)
+    # 2. OFFICIAL EVALUATION PIPELINE (test/mask chỉ được đọc ở boundary này)
+    evaluation_manifest = validate_evaluation(data_dir=data_dir, category=category)
     metrics = run_evaluation_pipeline(
-        manifest=locked_manifest,
+        manifest=evaluation_manifest,
         artifact=artifact,
         category=category,
         model_dir=models_dir,
         output_report=output_report,
-        reopen=reopen,
+            overwrite=overwrite,
     )
     print(f"\n[MASTER PIPELINE] Finished end-to-end execution for '{category}'.")
     return metrics
@@ -164,7 +164,7 @@ def main() -> None:
     run_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
     run_parser.add_argument("--models-dir", default="models", help="Models directory")
     run_parser.add_argument("--output-report", default=None, help="Report file path")
-    run_parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
+    run_parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # data: kiểm tra dữ liệu.
     data_parser = subparsers.add_parser("data", help="Validate data and generate manifest")
@@ -178,13 +178,13 @@ def main() -> None:
     train_parser.add_argument("--models-dir", default="models", help="Models directory")
     train_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
 
-    # evaluate: đọc locked test report-only.
+    # evaluate: đọc official test và chỉ ghi report.
     eval_parser = subparsers.add_parser("evaluate", help="Đánh giá locked test, report-only")
     eval_parser.add_argument("--category", default="bottle", help="Category name")
     eval_parser.add_argument("--models-dir", default="models", help="Models directory")
     eval_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
     eval_parser.add_argument("--output-report", default=None, help="Report file path")
-    eval_parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
+    eval_parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # serve: khởi động API.
     serve_parser = subparsers.add_parser("serve", help="Launch FastAPI REST server")
@@ -200,7 +200,7 @@ def main() -> None:
             data_dir=args.data_dir,
             models_dir=args.models_dir,
             output_report=args.output_report,
-            reopen=args.reopen_locked_test,
+            overwrite=args.overwrite_report,
         )
     elif args.command == "data":
         run_data_pipeline(data_dir=args.data_dir, category=args.category)
@@ -213,7 +213,7 @@ def main() -> None:
             model_dir=args.models_dir,
             data_dir=args.data_dir,
             output_report=args.output_report,
-            reopen=args.reopen_locked_test,
+            overwrite=args.overwrite_report,
         )
     elif args.command == "serve":
         import uvicorn

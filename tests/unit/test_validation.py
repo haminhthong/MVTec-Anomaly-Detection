@@ -1,4 +1,4 @@
-"""Unit tests for DatasetManifest and validate_mvtec_category."""
+"""Kiểm thử DatasetManifest và validate_mvtec_category."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def create_dummy_mvtec_structure(
     train_count: int = 25,
     defect_count: int = 5,
 ) -> Path:
-    """Helper to create a minimal compliant MVTec AD category directory."""
+    """Tạo thư mục category MVTec AD tối thiểu nhưng hợp lệ."""
     cat_dir = root / category
     train_good = cat_dir / "train" / "good"
     train_good.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,7 @@ def create_dummy_mvtec_structure(
 
 
 def test_validate_mvtec_category_success(tmp_path: Path) -> None:
-    """Test successful validation producing DatasetManifest."""
+    """Kiểm tra validation thành công và tạo DatasetManifest."""
     create_dummy_mvtec_structure(tmp_path, category="bottle", include_masks=True)
     manifest = validate_mvtec_category(data_dir=tmp_path, category="bottle")
 
@@ -63,7 +63,7 @@ def test_validate_mvtec_category_success(tmp_path: Path) -> None:
 
 
 def test_validate_mvtec_missing_mask_raises_error(tmp_path: Path) -> None:
-    """Requirement: defect test image missing ground-truth mask MUST fail."""
+    """Ảnh lỗi thiếu ground-truth mask bắt buộc phải báo lỗi."""
     create_dummy_mvtec_structure(tmp_path, category="cable", include_masks=False)
 
     with pytest.raises(DatasetValidationError, match="ground_truth"):
@@ -71,13 +71,13 @@ def test_validate_mvtec_missing_mask_raises_error(tmp_path: Path) -> None:
 
 
 def test_validate_mvtec_nonexistent_category(tmp_path: Path) -> None:
-    """Category not found raises FileNotFoundError."""
+    """Category không tồn tại phải phát sinh FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match="Không tìm thấy category"):
         validate_mvtec_category(data_dir=tmp_path, category="nonexistent_cat")
 
 
 def test_validate_mvtec_empty_train_raises_error(tmp_path: Path) -> None:
-    """Empty train/good raises DatasetValidationError."""
+    """Thư mục train/good rỗng phải phát sinh DatasetValidationError."""
     cat_dir = tmp_path / "bottle"
     (cat_dir / "train" / "good").mkdir(parents=True, exist_ok=True)
     (cat_dir / "test" / "good").mkdir(parents=True, exist_ok=True)

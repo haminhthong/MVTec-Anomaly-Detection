@@ -1,7 +1,7 @@
-"""Registry backbone cho trích xuất feature PatchCore-style.
+"""Danh mục backbone được hỗ trợ để trích xuất feature PatchCore-style.
 
-Registry ép contract tương thích giữa kiến trúc, layer và bộ trọng số ImageNet
-đã đăng ký; không cho phép tự chọn backbone ngoài contract.
+Danh mục này mô tả kiến trúc, layer và bộ trọng số ImageNet tương ứng; không
+cho phép chọn backbone ngoài các contract đã kiểm tra.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def get_backbone_spec(name: str) -> BackboneSpec:
         name: Tên kiến trúc, ví dụ ``resnet18`` hoặc ``resnet50``.
 
     Returns:
-        BackboneSpec: Contract tương ứng trong registry.
+        BackboneSpec: Contract tương ứng trong danh mục backbone.
 
     Raises:
         ValueError: Nếu kiến trúc chưa được hỗ trợ chính thức.
@@ -57,7 +57,7 @@ def get_backbone_spec(name: str) -> BackboneSpec:
     if key not in BACKBONE_REGISTRY:
         supported = list(BACKBONE_REGISTRY.keys())
         raise ValueError(
-            f"Unsupported backbone '{name}'. Officially supported architectures: {supported}."
+            f"Backbone '{name}' chưa được hỗ trợ. Các kiến trúc hợp lệ: {supported}."
         )
     return BACKBONE_REGISTRY[key]
 

@@ -1,4 +1,4 @@
-"""Unit tests for ImageFolderDataset."""
+"""Kiểm thử ImageFolderDataset."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.data.dataset import ImageFolderDataset
 
 
 def test_image_folder_dataset_loading(tmp_path: Path) -> None:
-    """Test ImageFolderDataset loads images and outputs expected tensor shape."""
+    """Kiểm tra dataset đọc ảnh và trả tensor đúng kích thước."""
     img1 = tmp_path / "img1.png"
     img2 = tmp_path / "img2.png"
     Image.new("RGB", (64, 64), color="red").save(img1)

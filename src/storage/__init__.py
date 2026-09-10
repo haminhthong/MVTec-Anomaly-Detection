@@ -1,1 +1,1 @@
-"""Lưu inspection và human review, không tự động cập nhật memory bank."""
+"""Lưu inspection và kết quả kiểm tra thủ công, không tự cập nhật memory bank."""

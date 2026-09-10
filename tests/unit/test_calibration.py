@@ -12,7 +12,7 @@ from src.training.calibration import calibrate_thresholds, split_reference_dev_c
 
 
 def test_reference_dev_calibration_split_reproducible(tmp_path: Path) -> None:
-    """Test reproducibility and disjoint sets."""
+    """Kiểm tra tính tái lập và việc các tập không chồng lấn."""
     paths = [tmp_path / f"{i:03d}.png" for i in range(100)]
     mem1, dev1, cal1 = split_reference_dev_calibration(
         paths, dev_fraction=0.0, calibration_fraction=0.2, seed=42, min_calibration_samples=20

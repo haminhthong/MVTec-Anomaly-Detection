@@ -1,4 +1,4 @@
-"""Các hàm inference nhẹ; detector torch được lazy-load khi cần runtime."""
+"""Các hàm suy luận nhẹ; detector torch được nạp khi cần runtime."""
 
 from __future__ import annotations
 

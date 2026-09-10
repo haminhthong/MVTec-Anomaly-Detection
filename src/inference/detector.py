@@ -1,4 +1,4 @@
-"""Runtime detector: input check -> 1-NN score -> heatmap -> triage."""
+"""Detector runtime: kiểm tra ảnh -> điểm 1-NN -> heatmap -> triage."""
 
 from __future__ import annotations
 
@@ -75,17 +75,17 @@ class AnomalyDetector:
 
     @property
     def image_threshold(self) -> float:
-        """Ngưỡng image score được calibration từ normal holdout."""
+        """Ngưỡng image score được hiệu chỉnh từ normal holdout."""
         return self.thresholds.image_threshold
 
     @property
     def pixel_threshold(self) -> float:
-        """Ngưỡng pixel score dùng cho localization overlay."""
+        """Ngưỡng pixel score dùng cho lớp phủ định vị."""
         return self.thresholds.pixel_threshold
 
     @torch.inference_mode()
     def score(self, image: Image.Image) -> tuple[float, np.ndarray]:
-        """Tính image anomaly score và heatmap đã Gaussian smoothing."""
+        """Tính image anomaly score và heatmap sau Gaussian smoothing."""
         tensor = self.transform(image.convert("RGB")).unsqueeze(0).to(self.device)
         patches, (height, width) = self.net.extract_spatial_features(tensor)
         distances, _ = self.memory_bank.kneighbors(patches.cpu().numpy())
@@ -180,7 +180,7 @@ class AnomalyDetector:
         camera_id: str | None = None,
         timestamp: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Score batch hợp lệ và ghép kết quả theo đúng thứ tự input."""
+        """Tính điểm batch hợp lệ và ghép kết quả theo đúng thứ tự đầu vào."""
         if not images:
             return []
         results: list[dict[str, Any] | None] = [None] * len(images)

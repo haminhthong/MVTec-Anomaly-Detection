@@ -1,4 +1,4 @@
-"""Integration tests verifying train pipeline."""
+"""Kiểm thử tích hợp pipeline train."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from src.training.trainer import train_patchcore
 
 
 def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
-    """Run train_patchcore on dummy dataset and check category-scoped artifact."""
+    """Chạy train_patchcore trên dataset giả lập và kiểm tra artifact theo category."""
     raw_dir = tmp_path / "data" / "raw"
     category = "dummy_cat"
     train_good = raw_dir / category / "train" / "good"

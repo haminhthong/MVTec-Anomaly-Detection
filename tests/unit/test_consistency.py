@@ -1,4 +1,4 @@
-"""Preprocessing consistency tests between training configuration, saved artifact, and runtime detector."""
+"""Kiểm tra preprocessing nhất quán giữa train, artifact và detector runtime."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from src.model.artifacts import ModelArtifact, ModelMetadata, Thresholds
 
 
 def test_train_inference_preprocessing_consistency(tmp_path: Path) -> None:
-    """Ensure training transform configuration matches artifact and detector runtime transforms 100%."""
+    """Bảo đảm cấu hình transform train khớp hoàn toàn với artifact và detector."""
     custom_prep = PreprocessingConfig(
         image_size=(256, 256),
         mean=(0.5, 0.5, 0.5),
@@ -36,7 +36,7 @@ def test_train_inference_preprocessing_consistency(tmp_path: Path) -> None:
 
     detector = AnomalyDetector(model_dir=cat_dir, category="custom_cat")
 
-    # Verify identical PreprocessingConfig
+    # Kiểm tra PreprocessingConfig giống nhau.
     assert detector.preprocessing_config.image_size == custom_prep.image_size
     assert detector.preprocessing_config.mean == custom_prep.mean
     assert detector.preprocessing_config.std == custom_prep.std

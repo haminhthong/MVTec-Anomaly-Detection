@@ -53,9 +53,9 @@ def run_pipeline_for_category(
     data_dir: str | Path = "data/raw",
     models_dir: str | Path = "models",
     backbone: str = "resnet18",
-    reopen: bool = False,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Chạy Reference -> Train -> Official Test cho một category."""
+    """Chạy Reference -> Train -> official test cho một category."""
     report_file = Path("reports") / category / "evaluation.json"
     metrics = run_end_to_end_pipeline(
         category=category,
@@ -63,7 +63,7 @@ def run_pipeline_for_category(
         data_dir=data_dir,
         models_dir=models_dir,
         output_report=report_file,
-        reopen=reopen,
+        overwrite=overwrite,
     )
     return metrics
 
@@ -148,7 +148,7 @@ def main():
     parser.add_argument("--models-dir", default="models", help="Path to models directory")
     parser.add_argument("--output-csv", default="reports/benchmark.csv", help="Output benchmark CSV path")
     parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
-    parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
+    parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
     args = parser.parse_args()
 
     if args.categories:
@@ -170,7 +170,7 @@ def main():
                 data_dir=args.data_dir,
                 models_dir=args.models_dir,
                 backbone=args.backbone,
-                reopen=args.reopen_locked_test,
+                overwrite=args.overwrite_report,
             )
             all_metrics.append(m)
         except Exception as exc:

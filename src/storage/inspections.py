@@ -112,7 +112,7 @@ class InspectionStore:
         defect_type: str | None = None,
         notes: str | None = None,
     ) -> None:
-        """Ghi QC_PASS/QC_REJECT; human review là nguồn label độc lập."""
+        """Ghi QC_PASS/QC_REJECT; kết quả thủ công là nhãn độc lập."""
         if not reviewer_id or not reviewer_id.strip():
             raise ValueError("reviewer_id không được để trống.")
         if final_outcome not in ALLOWED_QC_OUTCOMES:

@@ -1,4 +1,4 @@
-"""Metric benchmark và operational triage tại một image threshold."""
+"""Metric benchmark và triage vận hành theo image threshold."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def calculate_workflow_metrics(
         "f1_score": f1,
     }
     return {
-        "locked_test": True,
+        "official_test": True,
         "detection": {
             "image_auroc": _safe_metric(roc_auc_score, y_arr, scores_arr),
             "image_average_precision": _safe_metric(average_precision_score, y_arr, scores_arr),

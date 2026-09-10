@@ -12,7 +12,7 @@ def test_feature_extractor_dimensions() -> None:
     dummy_input = torch.randn(2, 3, 224, 224)
 
     patches = extractor(dummy_input)
-    # 2 ảnh * 28*28 (784 patches) = 1568 patches; 128 + 256 = 384 dimensions
+    # 2 ảnh * 28*28 (784 patch) = 1568 patch; 128 + 256 = 384 chiều.
     assert patches.shape == (2 * 784, 384)
 
     spatial_patches, (h, w) = extractor.extract_spatial_features(dummy_input)

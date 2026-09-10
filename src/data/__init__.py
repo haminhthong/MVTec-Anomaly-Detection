@@ -1,11 +1,11 @@
-"""Data package for MVTec AD Anomaly Detection."""
+"""Các thành phần dữ liệu của MVTec AD."""
 
 from __future__ import annotations
 
-from .manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
+from .manifest import DatasetManifest, EvaluationManifest, NormalReferenceManifest
 from .validation import (
     DatasetValidationError,
-    validate_locked_evaluation,
+    validate_evaluation,
     validate_mvtec_category,
     validate_reference_category,
 )
@@ -13,11 +13,11 @@ from .validation import (
 __all__ = [
     "DatasetManifest",
     "NormalReferenceManifest",
-    "LockedEvaluationManifest",
+    "EvaluationManifest",
     "DatasetValidationError",
     "validate_mvtec_category",
     "validate_reference_category",
-    "validate_locked_evaluation",
+    "validate_evaluation",
 ]
 
 

@@ -1,1 +1,1 @@
-"""Quality gate và capture contract trước khi chạy anomaly detector."""
+"""Kiểm tra chất lượng ảnh trước khi chạy anomaly detector."""

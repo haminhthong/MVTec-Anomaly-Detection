@@ -1,6 +1,6 @@
-"""Ablation leakage-safe trên Dev normal và synthetic stress.
+"""Chạy ablation không rò rỉ trên Dev normal và synthetic stress.
 
-Official MVTec test chỉ được đọc bởi evaluate_category ở final locked report,
+Official MVTec test chỉ được đọc bởi evaluate_category ở report cuối,
 không được dùng để chọn backbone/layer/coreset hay policy.
 """
 
@@ -28,7 +28,7 @@ from src.inference.detector import AnomalyDetector
 
 
 def _synthetic_stress(image: Image.Image, index: int) -> Image.Image:
-    """Tạo corruption có kiểm soát, không đưa ảnh giả vào memory bank."""
+    """Tạo biến đổi giả lập có kiểm soát, không đưa ảnh vào memory bank."""
     result = image.convert("RGB")
     if index % 4 == 0:
         return ImageEnhance.Brightness(result).enhance(1.35)
@@ -46,7 +46,7 @@ def _synthetic_stress(image: Image.Image, index: int) -> Image.Image:
 
 
 def measure_inference_latency(detector: AnomalyDetector, sample_image_path: Path, num_trials: int = 20) -> float:
-    """Đo latency trung bình trên ảnh Dev, không chạm official test."""
+    """Đo độ trễ trung bình trên ảnh Dev, không đọc official test."""
     with Image.open(sample_image_path) as image:
         rgb = image.convert("RGB")
         for _ in range(3):
@@ -60,7 +60,7 @@ def measure_inference_latency(detector: AnomalyDetector, sample_image_path: Path
 
 
 def evaluate_dev_stress(detector: AnomalyDetector, dev_paths: list[Path]) -> dict[str, float]:
-    """Đo false alarm normal và sensitivity trên synthetic stress."""
+    """Đo báo động nhầm trên normal và độ nhạy trên synthetic stress."""
     normal_scores: list[float] = []
     stress_scores: list[float] = []
     for index, path in enumerate(dev_paths):
@@ -82,7 +82,7 @@ def _run_candidates(
     candidates: list[tuple[str, dict[str, object]]],
     filename: str,
 ) -> None:
-    """Chạy candidate chỉ trên Reference/Dev và ghi CSV."""
+    """Chạy một cấu hình trên Reference/Dev và ghi CSV."""
     reference_manifest = validate_reference_category(data_dir=data_dir, category=category)
     rows: list[dict[str, object]] = []
     for label, overrides in candidates:
@@ -140,7 +140,7 @@ def run_coreset_ablation(category: str = "bottle", data_dir: str = "data/raw", o
 
 
 def run_layers_ablation(category: str = "bottle", data_dir: str = "data/raw", output_dir: str = "experiments") -> None:
-    """So sánh feature layers trên Dev normal và synthetic stress."""
+    """So sánh các feature layer trên Dev normal và synthetic stress."""
     candidates = [
         ("layer2", {"feature_layers": ("layer2",)}),
         ("layer3", {"feature_layers": ("layer3",)}),
@@ -150,13 +150,13 @@ def run_layers_ablation(category: str = "bottle", data_dir: str = "data/raw", ou
 
 
 def run_backbone_ablation(category: str = "bottle", data_dir: str = "data/raw", output_dir: str = "experiments") -> None:
-    """So sánh backbone trên Dev; final test vẫn locked."""
+    """So sánh backbone trên Dev; official test chỉ đánh giá cuối."""
     candidates = [(name, {"backbone": name}) for name in ("resnet18", "resnet50")]
     _run_candidates(category, data_dir, output_dir, candidates, "backbone_ablation.csv")
 
 
 def main() -> None:
-    """CLI cho Dev-only ablation."""
+    """CLI cho ablation chỉ dùng Dev."""
     parser = argparse.ArgumentParser(description="Leakage-safe Dev ablation cho PatchCore-style")
     parser.add_argument("--category", default="bottle")
     parser.add_argument("--data-dir", default="data/raw")

@@ -1,4 +1,4 @@
-"""Đánh giá locked MVTec test bằng artifact đã freeze, không retune policy."""
+"""Đánh giá official MVTec test bằng artifact đã cố định, không chỉnh lại ngưỡng."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import numpy as np
 from PIL import Image
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-from ..data.manifest import DatasetManifest, LockedEvaluationManifest, NormalReferenceManifest
-from ..data.validation import validate_locked_evaluation
+from ..data.manifest import DatasetManifest, EvaluationManifest, NormalReferenceManifest
+from ..data.validation import validate_evaluation
 from ..inference.detector import AnomalyDetector
 from ..model.artifacts import ModelArtifact
 from .aupro import compute_aupro
@@ -30,7 +30,7 @@ def _slice_metrics(
     masks: np.ndarray,
     maps: np.ndarray,
 ) -> dict[str, Any]:
-    """Tính image AUROC/AP và localization cho một defect type/area slice."""
+    """Tính image AUROC/AP và định vị cho một lát loại lỗi/diện tích."""
     indices = np.flatnonzero(selected | (y_true == 0))
     if not len(indices):
         return {"n": 0, "image_auroc": None, "image_average_precision": None, "aupro_0.3": None}
@@ -47,17 +47,16 @@ def evaluate_category(
     model_dir: str | Path | ModelArtifact | None = "models",
     data_dir: str | Path = "data/raw",
     output_report: str | Path | None = None,
-    manifest: DatasetManifest | LockedEvaluationManifest | None = None,
+    manifest: DatasetManifest | EvaluationManifest | None = None,
     artifact: ModelArtifact | str | Path | None = None,
-    reopen: bool = False,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Đánh giá official test locked và tạo defect-type/area slices.
+    """Đánh giá official test và tạo các lát theo loại lỗi/diện tích.
 
-    Nếu report locked đã tồn tại, chạy lại phải truyền ``reopen=True`` để tránh
-    âm thầm thay đổi bằng chứng final.
+    Nếu report đã tồn tại, chỉ ghi lại khi truyền ``overwrite=True``.
     """
     if isinstance(category, DatasetManifest):
-        manifest_obj: DatasetManifest | LockedEvaluationManifest | None = category
+        manifest_obj: DatasetManifest | EvaluationManifest | None = category
         resolved_category = category.category
     else:
         manifest_obj = manifest
@@ -67,7 +66,7 @@ def evaluate_category(
         resolved_category = manifest_obj.category
     if isinstance(manifest_obj, NormalReferenceManifest):
         raise ValueError(
-            "Evaluator cần LockedEvaluationManifest hoặc DatasetManifest có test; "
+            "Evaluator cần manifest có official test; "
             "không được đánh giá bằng manifest reference-only."
         )
     if resolved_category is None and isinstance(artifact, ModelArtifact):
@@ -80,15 +79,15 @@ def evaluate_category(
     model_root = Path(model_dir or "models")
     detector = AnomalyDetector(model_dir=model_root, category=resolved_category)
     if manifest_obj is None:
-        # Evaluation boundary duy nhất được phép đọc test/masks.
-        manifest_obj = validate_locked_evaluation(data_dir=data_dir, category=resolved_category)
-    if isinstance(manifest_obj, LockedEvaluationManifest) and manifest_obj.category != resolved_category:
+        # Đây là boundary duy nhất được phép đọc test và ground-truth mask.
+        manifest_obj = validate_evaluation(data_dir=data_dir, category=resolved_category)
+    if isinstance(manifest_obj, EvaluationManifest) and manifest_obj.category != resolved_category:
         raise ValueError("Evaluation manifest không khớp category của artifact.")
 
     report_file = Path(output_report) if output_report else Path("reports") / resolved_category / "evaluation.json"
-    if report_file.exists() and report_file.stat().st_size > 0 and not reopen:
+    if report_file.exists() and report_file.stat().st_size > 0 and not overwrite:
         raise FileExistsError(
-            f"Report đã tồn tại tại '{report_file}'. Dùng reopen=True nếu thật sự cần ghi lại."
+            f"Report đã tồn tại tại '{report_file}'. Dùng overwrite=True nếu thật sự cần ghi lại."
         )
 
     target_height, target_width = detector.preprocessing_config.image_size
@@ -99,7 +98,7 @@ def evaluate_category(
     names: list[str | None] = []
     area_ratios: list[float] = []
 
-    print(f"\n[EVALUATION] Official test cho '{resolved_category}' (report-only)...")
+    print(f"\n[EVALUATION] Official test cho '{resolved_category}' (chỉ ghi report)...")
     for image_path, is_defect, mask_path, defect_type in manifest_obj.get_all_test_items():
         with Image.open(image_path) as image:
             score, heatmap = detector.score(image)

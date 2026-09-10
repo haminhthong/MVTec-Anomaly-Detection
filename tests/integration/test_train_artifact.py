@@ -1,4 +1,4 @@
-"""Integration tests verifying offline training and artifact generation."""
+"""Kiểm thử tích hợp việc train offline và tạo artifact."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from src.training.trainer import train_patchcore
 
 
 def test_train_artifact_generation(tmp_path: Path) -> None:
-    """Run train_patchcore on dummy category and verify generated artifacts."""
+    """Chạy train_patchcore trên category giả lập và kiểm tra artifact."""
     raw_dir = tmp_path / "data" / "raw"
     category = "test_item"
     train_good = raw_dir / category / "train" / "good"
@@ -52,7 +52,7 @@ def test_train_artifact_generation(tmp_path: Path) -> None:
     report_dir = tmp_path / "reports" / category
     assert (report_dir / "training_split.json").exists()
 
-    # Verify split manifest
+    # Kiểm tra split manifest.
     split = SplitManifest.from_dict(
         json.loads((report_dir / "training_split.json").read_text(encoding="utf-8"))
     )
@@ -61,13 +61,13 @@ def test_train_artifact_generation(tmp_path: Path) -> None:
     assert len(split.dev_files) == split.dev_count
     assert len(split.calibration_files) == split.calibration_count
 
-    # Verify memory bank
+    # Kiểm tra memory bank.
     mem = np.load(cat_dir / "memory_bank.npy")
     assert mem.ndim == 2
     assert mem.shape[1] == 384
     assert len(mem) <= 20
 
-    # Verify loaded artifact
+    # Kiểm tra artifact sau khi nạp lại.
     loaded_art = ModelArtifact.load(cat_dir)
     assert loaded_art.metadata.category == category
     assert loaded_art.thresholds.image_threshold > 0

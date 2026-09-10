@@ -1,4 +1,4 @@
-"""Public API schema và FastAPI app lazy-load."""
+"""Schema API công khai và FastAPI được nạp theo nhu cầu."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Metric evaluation; evaluator torch được lazy-load khi cần đọc model."""
+"""Các metric đánh giá; evaluator torch được nạp khi cần đọc model."""
 
 from __future__ import annotations
 

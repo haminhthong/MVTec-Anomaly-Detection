@@ -23,7 +23,7 @@ class CaptureContract:
     orientation: str = "fixed"
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize contract vào config artifact."""
+        """Chuyển điều kiện kiểm tra thành dữ liệu lưu trong metadata."""
         payload = asdict(self)
         if self.roi is not None:
             payload["roi"] = list(self.roi)

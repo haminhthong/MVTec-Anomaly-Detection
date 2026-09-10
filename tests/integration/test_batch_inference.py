@@ -1,4 +1,4 @@
-"""Integration tests verifying batch inference parity with single-image inspection."""
+"""Kiểm thử tích hợp bảo đảm batch khớp với suy luận từng ảnh."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from src.training.trainer import train_patchcore
 
 
 def test_batch_inference_parity(tmp_path: Path) -> None:
-    """Ensure inspect_batch returns results matching single-image inspect() within numerical tolerance."""
+    """Bảo đảm inspect_batch khớp inspect() trong sai số số học cho phép."""
     raw_dir = tmp_path / "data" / "raw"
     category = "batch_test"
     train_good = raw_dir / category / "train" / "good"
@@ -43,16 +43,16 @@ def test_batch_inference_parity(tmp_path: Path) -> None:
 
     detector = AnomalyDetector(model_dir=models_dir, category=category)
 
-    # Prepare 3 distinct test images
+    # Chuẩn bị 3 ảnh test khác nhau.
     img1 = Image.new("RGB", (48, 48), color=(10, 20, 30))
     img2 = Image.new("RGB", (48, 48), color=(200, 100, 50))
     img3 = Image.new("RGB", (48, 48), color=(0, 250, 10))
     test_images = [img1, img2, img3]
 
-    # Single inspections
+    # Suy luận từng ảnh.
     single_results = [detector.inspect(im, include_overlay=False) for im in test_images]
 
-    # Batch inspection
+    # Suy luận theo batch.
     batch_results = detector.inspect_batch(test_images, include_overlay=False)
 
     assert len(batch_results) == len(test_images)
@@ -60,7 +60,7 @@ def test_batch_inference_parity(tmp_path: Path) -> None:
     for single_r, batch_r in zip(single_results, batch_results, strict=True):
         assert single_r["decision"] == batch_r["decision"]
         assert single_r["decision"] == batch_r["decision"]
-        # Score parity within small floating point difference
+        # Điểm số phải khớp trong sai số số thực nhỏ.
         assert np.isclose(
             single_r["anomaly_score"],
             batch_r["anomaly_score"],

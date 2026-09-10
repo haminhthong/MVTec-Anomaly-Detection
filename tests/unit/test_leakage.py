@@ -1,4 +1,4 @@
-"""Anti-leakage test: verifies that offline model training never accesses test or ground_truth data."""
+"""Kiểm tra chống rò rỉ: train offline không được đọc test hoặc ground_truth."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from src.training.trainer import train_patchcore
 
 
 def test_training_never_reads_test_directory(tmp_path: Path) -> None:
-    """CRITICAL TEST: Ensure training pipeline NEVER reads test/ or ground_truth/ directories."""
+    """Kiểm tra quan trọng: pipeline train không bao giờ đọc test/ hoặc ground_truth/."""
     cat_root = tmp_path / "data" / "raw" / "leakage_check"
     train_good = cat_root / "train" / "good"
     test_good = cat_root / "test" / "good"
@@ -23,7 +23,7 @@ def test_training_never_reads_test_directory(tmp_path: Path) -> None:
     for d in (train_good, test_good, test_defect, ground_truth):
         d.mkdir(parents=True, exist_ok=True)
 
-    # Populate dummy images
+    # Tạo các ảnh giả lập.
     for i in range(25):
         Image.new("RGB", (32, 32), color=(i, i, i)).save(train_good / f"{i:03d}.png")
     for i in range(5):
@@ -58,7 +58,7 @@ def test_training_never_reads_test_directory(tmp_path: Path) -> None:
 
     assert len(accessed_image_paths) > 0, "Training must have loaded images."
 
-    # Verify zero leakage
+    # Xác nhận không có rò rỉ dữ liệu.
     for accessed in accessed_image_paths:
         normalized = accessed.replace("\\", "/")
         assert "/test/" not in normalized, f"LEAKAGE DETECTED: Training accessed test image '{accessed}'!"

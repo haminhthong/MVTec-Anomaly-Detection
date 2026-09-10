@@ -1,4 +1,4 @@
-"""Benchmark latency, throughput và footprint tài nguyên của inference.
+"""Đo độ trễ, throughput và tài nguyên của inference.
 
 Đo lường:
 - Độ trễ một ảnh (Mean, Median, P95, Min, Max).
@@ -37,7 +37,7 @@ def benchmark_category(
     num_runs: int = 30,
     batch_sizes: tuple[int, ...] = (1, 4, 8),
 ) -> dict:
-    """Đo hiệu năng đầy đủ của detector và trả về metadata runtime."""
+    """Đo hiệu năng của detector và trả về thông tin runtime."""
     print("=" * 70)
     print(f"   INFERENCE PERFORMANCE BENCHMARK: {category.upper()}")
     print("=" * 70)
@@ -79,11 +79,11 @@ def benchmark_category(
     print(f"Benchmark iterations : {num_runs}")
     print("-" * 70)
 
-    # 1. Chạy warmup.
+    # 1. Chạy lượt khởi động để loại ảnh hưởng của lần gọi đầu.
     for _ in range(num_warmup):
         _ = detector.score(pil_images[0])
 
-    # 2. Đo độ trễ một ảnh (batch = 1).
+    # 2. Đo độ trễ từng ảnh với batch = 1.
     single_latencies: list[float] = []
     for _ in range(num_runs):
         t0 = time.perf_counter()
@@ -104,7 +104,7 @@ def benchmark_category(
     print(f"  - Min / Max        : {min_lat:6.2f} ms / {max_lat:6.2f} ms")
     print(f"  - Throughput       : {throughput_single:6.2f} images/second")
 
-    # 3. Benchmark inspection theo batch.
+    # 3. Đo inspection theo batch.
     batch_results: dict[int, dict] = {}
     print("\n[BATCH INFERENCE THROUGHPUT]")
     print("  Batch Size | Latency/Batch (ms) | Latency/Image (ms) | Throughput (FPS)")
@@ -112,7 +112,7 @@ def benchmark_category(
 
     for b in batch_sizes:
         batch_imgs = pil_images[:b]
-        # Warmup batch.
+        # Khởi động batch trước khi đo.
         _ = detector.inspect_batch(batch_imgs, include_overlay=False)
 
         batch_times: list[float] = []

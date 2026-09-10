@@ -1,4 +1,4 @@
-"""Module tính toán chỉ số AUPRO (Area Under Per-Region Overlap).
+"""Tính chỉ số AUPRO (Area Under Per-Region Overlap).
 
 AUPRO@0.3 đánh giá mức độ bao phủ của bản đồ nhiệt dự đoán trên từng thành phần liên thông
 (connected component) của ground-truth mask, không bị thiên lệch bởi kích thước vùng lỗi lớn/nhỏ.
@@ -11,12 +11,12 @@ from scipy.ndimage import label
 
 
 def compute_aupro(masks: np.ndarray, maps: np.ndarray, max_fpr: float = 0.3) -> float:
-    """Tính toán chỉ số AUPRO (Area Under Per-Region Overlap) trong miền FPR [0, max_fpr].
+    """Tính AUPRO trong miền FPR ``[0, max_fpr]``.
 
     Args:
-        masks: Mảng 3D boolean ground-truth masks [N, H, W] (True nếu là pixel lỗi).
-        maps: Mảng 3D float32 bản đồ nhiệt dự đoán [N, H, W].
-        max_fpr: Giới hạn Tỷ lệ Dương tính Giả (False Positive Rate) tối đa (mặc định: 0.3).
+        masks: Mask ground truth boolean [N, H, W], True là pixel lỗi.
+        maps: Bản đồ nhiệt dự đoán float32 [N, H, W].
+        max_fpr: Giới hạn tỷ lệ dương tính giả, mặc định là 0.3.
 
     Returns:
         float: Giá trị chỉ số AUPRO chuẩn hóa trong khoảng [0, 1].

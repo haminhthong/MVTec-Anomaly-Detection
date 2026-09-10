@@ -1,4 +1,4 @@
-"""Schema HTTP tối giản cho inference và human review."""
+"""Schema HTTP tối giản cho suy luận và kiểm tra thủ công."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class HealthResponse(BaseModel):
 
 
 class InspectionResponse(BaseModel):
-    """Kết quả input check, anomaly score và triage decision."""
+    """Kết quả kiểm tra ảnh, anomaly score và quyết định triage."""
 
     inspection_id: str = Field(default_factory=lambda: f"insp_{uuid.uuid4().hex[:12]}")
     category: str

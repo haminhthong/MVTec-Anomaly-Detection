@@ -39,7 +39,7 @@ class FeatureExtractor(nn.Module):
         self.backbone_name: str = backbone
         self.pretrained: bool = pretrained
 
-        # Chỉ dùng backbone đã có contract trong registry.
+        # Chỉ dùng backbone đã có contract trong danh mục hỗ trợ.
         spec = get_backbone_spec(backbone)
         default_layers = spec.default_layers
         default_weights = spec.weights
@@ -68,7 +68,7 @@ class FeatureExtractor(nn.Module):
                 try:
                     resolved_weights = models.get_weight(self.weights_name)
                 except (AttributeError, KeyError, TypeError, ValueError) as exc:
-                    raise ValueError(f"Weights registry không hợp lệ: {self.weights_name}") from exc
+                    raise ValueError(f"Weights trong danh mục không hợp lệ: {self.weights_name}") from exc
             else:
                 resolved_weights = self.weights_name
 

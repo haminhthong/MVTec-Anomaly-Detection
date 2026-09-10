@@ -22,7 +22,7 @@ MAX_IMAGE_PIXELS = 25_000_000
 
 app = FastAPI(
     title="MVTec PatchCore-style Anomaly Detection",
-    description="Normal-only visual anomaly detection with localization and human review triage.",
+    description="Phát hiện bất thường từ ảnh normal, định vị vùng nghi vấn và chuyển kiểm tra thủ công.",
     version="1.0.0",
 )
 
@@ -51,11 +51,11 @@ def _available_categories() -> list[str]:
 
 
 def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
-    """Kiểm tra upload, giới hạn decompression bomb và chuyển sang RGB."""
+    """Kiểm tra file tải lên, chống ảnh giải nén quá lớn và chuyển sang RGB."""
     if len(raw_bytes) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"Image upload exceeds limit of {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            detail=f"Ảnh tải lên vượt quá giới hạn {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
         )
     try:
         Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
@@ -65,7 +65,7 @@ def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
     except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
         raise HTTPException(
             status_code=415,
-            detail=f"Uploaded file is not a valid image format: {exc}",
+            detail=f"File tải lên không phải định dạng ảnh hợp lệ: {exc}",
         ) from exc
 
 
@@ -89,9 +89,9 @@ def health() -> HealthResponse:
 
 @app.post("/inspect", response_model=InspectionResponse, tags=["Inspection"])
 async def inspect(
-    file: Annotated[UploadFile, File(..., description="Product image file (PNG/JPG)")],
+    file: Annotated[UploadFile, File(..., description="Ảnh sản phẩm (PNG/JPG)")],
     category: Annotated[str, Query(description="MVTec category, ví dụ bottle")],
-    camera_id: Annotated[str | None, Query(description="Optional camera identifier")] = None,
+    camera_id: Annotated[str | None, Query(description="Mã camera tùy chọn")] = None,
     include_overlay: Annotated[
         bool, Form(description="Trả heatmap overlay Base64 nếu true")
     ] = True,
@@ -114,20 +114,20 @@ async def inspect(
 
 @app.post("/inspect/batch", response_model=BatchInspectionResponse, tags=["Inspection"])
 async def inspect_batch(
-    files: Annotated[list[UploadFile], File(..., description="Multiple product images")],
+    files: Annotated[list[UploadFile], File(..., description="Nhiều ảnh sản phẩm")],
     category: Annotated[str, Query(description="MVTec category, ví dụ bottle")],
-    camera_id: Annotated[str | None, Query(description="Optional camera identifier")] = None,
+    camera_id: Annotated[str | None, Query(description="Mã camera tùy chọn")] = None,
     include_overlay: Annotated[
         bool, Form(description="Trả heatmap overlay Base64 nếu true")
     ] = False,
 ) -> BatchInspectionResponse:
-    """Score batch và giữ thứ tự các file đầu vào."""
+    """Tính điểm theo batch và giữ nguyên thứ tự file đầu vào."""
     if not files:
-        raise HTTPException(status_code=400, detail="No files provided for batch inspection.")
+        raise HTTPException(status_code=400, detail="Chưa cung cấp file cho batch inspection.")
     if len(files) > MAX_BATCH_FILES:
         raise HTTPException(
             status_code=400,
-            detail=f"Batch size exceeds maximum limit of {MAX_BATCH_FILES} files.",
+            detail=f"Số file trong batch vượt quá giới hạn {MAX_BATCH_FILES} file.",
         )
     images = [
         _validate_and_load_image(await file.read(MAX_UPLOAD_BYTES + 1))

@@ -32,7 +32,7 @@ class Thresholds:
             raise ValueError("Các threshold không được âm.")
 
     def to_dict(self) -> dict[str, float]:
-        """Chuyển threshold sang JSON."""
+        """Chuyển threshold sang dictionary để ghi JSON."""
         return {
             "image_threshold": float(self.image_threshold),
             "pixel_threshold": float(self.pixel_threshold),
@@ -67,7 +67,7 @@ class SplitManifest:
     reference_count: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize thông tin Reference/Dev/Calibration."""
+        """Chuyển thông tin Reference/Dev/Calibration thành dictionary."""
         payload = asdict(self)
         payload["reference_count"] = (
             self.reference_count if self.reference_count is not None else self.memory_count
@@ -118,7 +118,7 @@ class ModelMetadata:
     dataset_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize metadata model."""
+        """Chuyển metadata model thành dictionary."""
         return asdict(self)
 
     @classmethod

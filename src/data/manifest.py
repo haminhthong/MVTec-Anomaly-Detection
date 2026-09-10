@@ -34,7 +34,7 @@ def _relative_path(root: Path, path: Path) -> str:
 
 
 def build_file_records(root: Path, paths: Iterable[Path]) -> list[dict[str, Any]]:
-    """Tạo record provenance gồm đường dẫn tương đối, SHA256 và số byte."""
+    """Tạo bản ghi nguồn gồm đường dẫn tương đối, SHA256 và số byte."""
     records: list[dict[str, Any]] = []
     unique_paths = sorted(
         {Path(item) for item in paths},
@@ -64,7 +64,7 @@ def fingerprint_records(category: str, records: Iterable[dict[str, Any]]) -> str
 
 
 def _restore_path(root: Path, value: str | Path) -> Path:
-    """Khôi phục path đã lưu dưới dạng tương đối hoặc tuyệt đối."""
+    """Khôi phục đường dẫn đã lưu dưới dạng tương đối hoặc tuyệt đối."""
     path = Path(value)
     return path if path.is_absolute() else root / path
 
@@ -99,7 +99,7 @@ class NormalReferenceManifest:
         return len(self.train_good)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize manifest với path tương đối và provenance đầy đủ."""
+        """Chuyển manifest thành JSON với đường dẫn tương đối và provenance đầy đủ."""
         return {
             "manifest_type": self.manifest_type,
             "category": self.category,
@@ -144,8 +144,8 @@ class NormalReferenceManifest:
 
 
 @dataclass
-class LockedEvaluationManifest:
-    """Manifest chỉ chứa official test và mask, dùng ở bước đánh giá cuối."""
+class EvaluationManifest:
+    """Manifest chỉ chứa official test và mask cho bước đánh giá cuối."""
 
     category: str
     root_path: Path
@@ -159,7 +159,7 @@ class LockedEvaluationManifest:
     license: str | None = "CC BY-NC-SA 4.0"
     file_records: list[dict[str, Any]] = field(default_factory=list)
 
-    manifest_type: str = field(default="locked_evaluation", init=False)
+    manifest_type: str = field(default="official_evaluation", init=False)
 
     def __post_init__(self) -> None:
         self.root_path = Path(self.root_path)
@@ -179,17 +179,17 @@ class LockedEvaluationManifest:
 
     @property
     def total_test_good(self) -> int:
-        """Số ảnh normal trong locked test."""
+        """Số ảnh normal trong official test."""
         return len(self.test_good)
 
     @property
     def total_test_defect(self) -> int:
-        """Tổng số ảnh lỗi trong locked test."""
+        """Tổng số ảnh lỗi trong official test."""
         return sum(len(paths) for paths in self.test_defect.values())
 
     @property
     def total_test(self) -> int:
-        """Tổng số ảnh trong locked test."""
+        """Tổng số ảnh trong official test."""
         return self.total_test_good + self.total_test_defect
 
     @property
@@ -208,7 +208,7 @@ class LockedEvaluationManifest:
         return items
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize locked test manifest với path tương đối."""
+        """Chuyển manifest official test thành JSON với đường dẫn tương đối."""
         return {
             "manifest_type": self.manifest_type,
             "category": self.category,
@@ -237,8 +237,8 @@ class LockedEvaluationManifest:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "LockedEvaluationManifest":
-        """Khôi phục locked evaluation manifest từ JSON."""
+    def from_dict(cls, data: dict[str, Any]) -> "EvaluationManifest":
+        """Khôi phục manifest official test từ JSON."""
         root = Path(data["root_path"])
         test_good = [_restore_path(root, path) for path in data.get("test_good", [])]
         test_defect = {
@@ -264,14 +264,14 @@ class LockedEvaluationManifest:
         )
 
     def save(self, path: str | Path) -> None:
-        """Ghi manifest locked evaluation JSON."""
+        """Ghi manifest official test ra JSON."""
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
-    def load(cls, path: str | Path) -> "LockedEvaluationManifest":
-        """Đọc locked evaluation manifest."""
+    def load(cls, path: str | Path) -> "EvaluationManifest":
+        """Đọc manifest official test."""
         target = Path(path)
         return cls.from_dict(json.loads(target.read_text(encoding="utf-8")))
 
@@ -319,12 +319,12 @@ class DatasetManifest:
 
     @property
     def total_test_good(self) -> int:
-        """Tổng số ảnh test normal."""
+        """Tổng số ảnh normal trong tập test."""
         return len(self.test_good)
 
     @property
     def total_test_defect(self) -> int:
-        """Tổng số ảnh test lỗi."""
+        """Tổng số ảnh lỗi trong tập test."""
         return sum(len(paths) for paths in self.test_defect.values())
 
     @property
@@ -338,7 +338,7 @@ class DatasetManifest:
         return sorted(self.test_defect)
 
     def get_all_test_items(self) -> list[tuple[Path, int, Path | None, str | None]]:
-        """Trả về ảnh test kèm loại defect để tạo các lát chẩn đoán."""
+        """Trả về ảnh test kèm loại lỗi để tạo các lát chẩn đoán."""
         items: list[tuple[Path, int, Path | None, str | None]] = [
             (path, 0, None, None) for path in sorted(self.test_good)
         ]
@@ -348,7 +348,7 @@ class DatasetManifest:
         return items
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize combined manifest."""
+        """Chuyển manifest tổng hợp thành JSON."""
         return {
             "manifest_type": self.manifest_type,
             "category": self.category,

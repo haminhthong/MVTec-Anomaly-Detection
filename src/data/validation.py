@@ -1,4 +1,4 @@
-"""Validator tách biệt reference normal khỏi locked evaluation test.
+"""Validator tách biệt reference normal khỏi official test.
 
 Điểm quan trọng: ``validate_reference_category`` chỉ duyệt ``train/good``.
 Code xây model dùng hàm này, vì vậy không vô tình phụ thuộc vào test/mask.
@@ -13,7 +13,7 @@ from PIL import Image, UnidentifiedImageError
 
 from .manifest import (
     DatasetManifest,
-    LockedEvaluationManifest,
+    EvaluationManifest,
     NormalReferenceManifest,
     SUPPORTED_EXTENSIONS,
 )
@@ -52,7 +52,7 @@ def _image_files(directory: Path, description: str) -> list[Path]:
 
 
 def _source_metadata(cat_root: Path) -> dict[str, str | None]:
-    """Đọc provenance dataset do download script ghi, nếu có."""
+    """Đọc thông tin nguồn dữ liệu do script tải ghi lại, nếu có."""
     candidates = (cat_root.parent / "DATASET_SOURCE.json", cat_root / "DATASET_SOURCE.json")
     for path in candidates:
         if path.exists():
@@ -75,7 +75,7 @@ def _source_metadata(cat_root: Path) -> dict[str, str | None]:
 
 
 def _verify_images(paths: list[Path]) -> None:
-    """Đọc metadata và verify từng ảnh để phát hiện file hỏng."""
+    """Đọc metadata và kiểm tra từng ảnh để phát hiện file hỏng."""
     for path in paths:
         try:
             with Image.open(path) as image:
@@ -89,7 +89,7 @@ def validate_reference_category(
     category: str = "bottle",
     check_image_integrity: bool = False,
 ) -> NormalReferenceManifest:
-    """Validate chỉ ``train/good`` và tạo normal reference manifest.
+    """Kiểm tra chỉ ``train/good`` và tạo normal reference manifest.
 
     Hàm này cố ý không kiểm tra ``test`` hay ``ground_truth``. Đây là boundary
     chống leakage của model-building pipeline.
@@ -107,12 +107,12 @@ def validate_reference_category(
     )
 
 
-def validate_locked_evaluation(
+def validate_evaluation(
     data_dir: str | Path = "data/raw",
     category: str = "bottle",
     check_image_integrity: bool = False,
-) -> LockedEvaluationManifest:
-    """Validate official test và mask cho bước đánh giá locked cuối.
+) -> EvaluationManifest:
+    """Kiểm tra official test và mask cho bước đánh giá cuối.
 
     Hàm này không được import vào training module.
     """
@@ -152,7 +152,7 @@ def validate_locked_evaluation(
         _verify_images(test_good + defect_images + list(masks.values()))
 
     metadata = _source_metadata(cat_root)
-    return LockedEvaluationManifest(
+    return EvaluationManifest(
         category=category,
         root_path=cat_root,
         test_good=test_good,
@@ -173,7 +173,7 @@ def validate_mvtec_category(
     ``validate_reference_category`` để giữ test isolation ở mức kiến trúc.
     """
     reference = validate_reference_category(data_dir, category, check_image_integrity)
-    evaluation = validate_locked_evaluation(data_dir, category, check_image_integrity)
+    evaluation = validate_evaluation(data_dir, category, check_image_integrity)
     all_paths = list(reference.train_good) + list(evaluation.test_good)
     all_paths.extend(path for paths in evaluation.test_defect.values() for path in paths)
     all_paths.extend(evaluation.masks.values())

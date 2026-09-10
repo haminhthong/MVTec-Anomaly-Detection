@@ -1,4 +1,4 @@
-"""Xây model PatchCore-style chỉ từ normal reference, không đọc locked test."""
+"""Xây model PatchCore-style chỉ từ normal reference, không đọc official test."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def train_patchcore(
         )
 
     # Nếu caller truyền manifest tổng hợp, chỉ dựng lại reference manifest
-    # từ train/good để artifact training không mang theo test/mask provenance.
+    # từ train/good để artifact training không mang theo provenance test/mask.
     reference_manifest = (
         manifest_obj
         if isinstance(manifest_obj, NormalReferenceManifest)
@@ -84,7 +84,7 @@ def train_patchcore(
         )
     )
     # Giữ fingerprint của manifest caller truyền vào để các stage liên kết
-    # cùng một provenance. Với manifest combined, fingerprint này bao gồm
+    # cùng một provenance. Với manifest tổng hợp, fingerprint này bao gồm
     # toàn bộ dataset; fingerprint reference-only vẫn được lưu riêng bên dưới.
     dataset_fingerprint = manifest_obj.fingerprint or reference_manifest.fingerprint
 

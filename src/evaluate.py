@@ -39,9 +39,9 @@ def main() -> None:
         help="Đường dẫn report JSON đầu ra",
     )
     parser.add_argument(
-        "--reopen-locked-test",
+        "--overwrite-report",
         action="store_true",
-        help="Cho phép ghi lại locked report hiện có sau khi chủ động mở lại",
+        help="Cho phép ghi lại report hiện có",
     )
     args = parser.parse_args()
     evaluate_category(
@@ -49,7 +49,7 @@ def main() -> None:
         model_dir=args.model_dir,
         data_dir=args.data_dir,
         output_report=args.output_report,
-        reopen=args.reopen_locked_test,
+        overwrite=args.overwrite_report,
     )
 
 

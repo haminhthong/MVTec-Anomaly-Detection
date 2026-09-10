@@ -1,4 +1,4 @@
-"""Unit tests for MemoryBank."""
+"""Kiểm thử MemoryBank."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.model.memory_bank import MemoryBank
 
 
 def test_memory_bank_nearest_neighbors() -> None:
-    """Test 1-NN index construction and query distance."""
+    """Kiểm tra tạo chỉ mục 1-NN và truy vấn khoảng cách."""
     vectors = np.array([[0.0, 0.0], [10.0, 10.0]], dtype=np.float32)
     bank = MemoryBank(vectors)
 
@@ -27,7 +27,7 @@ def test_memory_bank_nearest_neighbors() -> None:
 
 
 def test_memory_bank_save_and_load(tmp_path: Path) -> None:
-    """Test saving to .npy and reloading."""
+    """Kiểm tra lưu ra .npy và nạp lại."""
     vectors = np.random.randn(50, 64).astype(np.float32)
     bank = MemoryBank(vectors)
     save_path = tmp_path / "memory_bank.npy"

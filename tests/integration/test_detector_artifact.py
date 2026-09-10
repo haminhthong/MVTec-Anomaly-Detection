@@ -1,4 +1,4 @@
-"""Integration tests verifying AnomalyDetector loads artifact and scores samples correctly."""
+"""Kiểm thử tích hợp việc detector đọc artifact và chấm ảnh."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from src.training.trainer import train_patchcore
 
 
 def test_detector_from_saved_artifact(tmp_path: Path) -> None:
-    """Train dummy artifact, load detector, and inspect an image."""
+    """Tạo artifact thử nghiệm, nạp detector và inspect một ảnh."""
     raw_dir = tmp_path / "data" / "raw"
     category = "widget"
     train_good = raw_dir / category / "train" / "good"

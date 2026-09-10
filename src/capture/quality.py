@@ -13,7 +13,7 @@ from .contract import CaptureContract
 
 @dataclass(frozen=True)
 class CaptureQualityResult:
-    """Kết quả quality gate có thể lưu cùng inspection."""
+    """Kết quả kiểm tra chất lượng có thể lưu cùng inspection."""
 
     valid: bool
     state: str
@@ -21,7 +21,7 @@ class CaptureQualityResult:
     metrics: dict[str, float]
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize kết quả quality gate."""
+        """Chuyển kết quả kiểm tra chất lượng thành dictionary."""
         return {
             "valid": self.valid,
             "state": self.state,

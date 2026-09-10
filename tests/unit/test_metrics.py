@@ -22,14 +22,14 @@ def test_calculate_workflow_metrics_logic() -> None:
     assert "localization" in res
     assert "operational_decision" in res
 
-    # Tier 1
+    # Nhóm 1.
     assert res["detection"]["image_auroc"] == 1.0
     assert res["detection"]["image_average_precision"] == 1.0
 
-    # Tier 2
+    # Nhóm 2.
     assert res["localization"]["pixel_auroc"] > 0.99
 
-    # Tier 3
+    # Nhóm 3.
     op = res["operational_decision"]
     assert op["accuracy"] == 1.0
     assert op["precision"] == 1.0

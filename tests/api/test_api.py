@@ -1,4 +1,4 @@
-"""API integration tests using FastAPI TestClient."""
+"""Kiểm thử tích hợp API bằng FastAPI TestClient."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.training.trainer import train_patchcore
 
 @pytest.fixture(scope="module")
 def setup_api_model(tmp_path_factory: pytest.TempPathFactory):
-    """Set up a test model for the API test suite."""
+    """Tạo model thử nghiệm cho bộ kiểm thử API."""
     tmp_path = tmp_path_factory.mktemp("api_test_env")
     raw_dir = tmp_path / "data" / "raw"
     category = "api_item"
@@ -65,7 +65,7 @@ def test_health_endpoint(setup_api_model: str) -> None:
 
 
 def test_inspect_single_image(setup_api_model: str) -> None:
-    """Test POST /inspect with single image upload."""
+    """Kiểm tra POST /inspect với một ảnh tải lên."""
     client = TestClient(app_module.app)
 
     img = Image.new("RGB", (64, 64), color="red")
@@ -86,7 +86,7 @@ def test_inspect_single_image(setup_api_model: str) -> None:
 
 
 def test_inspect_batch_images(setup_api_model: str) -> None:
-    """Test POST /inspect/batch with multiple image files."""
+    """Kiểm tra POST /inspect/batch với nhiều file ảnh."""
     client = TestClient(app_module.app)
 
     files_payload = []
@@ -108,7 +108,7 @@ def test_inspect_batch_images(setup_api_model: str) -> None:
 
 
 def test_inspect_missing_category_404() -> None:
-    """Test POST /inspect with non-existent category returns 404."""
+    """Kiểm tra POST /inspect trả 404 khi category không tồn tại."""
     client = TestClient(app_module.app)
     img = Image.new("RGB", (32, 32), color="blue")
     buf = io.BytesIO()
