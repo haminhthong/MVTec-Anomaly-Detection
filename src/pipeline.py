@@ -179,7 +179,7 @@ def main() -> None:
     train_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
 
     # evaluate: đọc official test và chỉ ghi report.
-    eval_parser = subparsers.add_parser("evaluate", help="Đánh giá locked test, report-only")
+    eval_parser = subparsers.add_parser("evaluate", help="Đánh giá official test, chỉ ghi report")
     eval_parser.add_argument("--category", default="bottle", help="Category name")
     eval_parser.add_argument("--models-dir", default="models", help="Models directory")
     eval_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")

@@ -31,8 +31,7 @@ reports/<category>/training_split.json
 reports/<category>/reference_manifest.json
 ```
 
-Model directory không chứa release pointer, registry, SHA256 runtime manifest
-hay danh sách file split.
+Model directory chỉ chứa các file cần thiết để detector chạy.
 
 ## Inference
 

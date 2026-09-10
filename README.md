@@ -323,7 +323,7 @@ GitHub Actions chạy Python 3.11, CPU PyTorch/Torchvision, compile source, `pip
 - P99 calibration là heuristic normal upper-tail; không phải guarantee cho dữ liệu production.
 - Latency phụ thuộc hardware, image size, thread count và memory bank.
 - Feedback QC chỉ được lưu; không tự retrain hoặc tự cập nhật memory bank.
-- FastAPI là demo serving, chưa phải hệ thống factory deployment.
+- FastAPI là demo serving, chưa phải hệ thống triển khai tại nhà máy.
 
 ## Tài liệu liên quan
 

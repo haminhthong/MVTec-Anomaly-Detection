@@ -143,7 +143,7 @@ def evaluate_category(
             "test_normal_count": int((y_arr == 0).sum()),
             "dataset_fingerprint": getattr(manifest_obj, "fingerprint", None),
             "defect_prevalence_in_benchmark": float(y_arr.mean()) if len(y_arr) else 0.0,
-            "operational_note": "MVTec prevalence khong phai factory prevalence; khong suy ra throughput production.",
+            "operational_note": "Tỷ lệ lỗi của MVTec không đại diện cho dữ liệu vận hành thực tế; không suy ra throughput.",
         }
     )
 
