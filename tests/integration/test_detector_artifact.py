@@ -37,22 +37,20 @@ def test_detector_from_saved_artifact(tmp_path: Path) -> None:
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
     _ = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
 
     detector = AnomalyDetector(model_dir=models_dir, category=category)
     assert detector.category == category
-    assert detector.threshold > 0
+    assert detector.image_threshold > 0
 
     test_img = Image.new("RGB", (64, 64), color=(100, 100, 100))
     result = detector.inspect(test_img, include_overlay=True)
 
     assert "inspection_id" in result
     assert result["category"] == category
-    assert result["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
-    assert result["scores"]["anomaly_score"] >= 0
+    assert result["decision"] in {"PASS_CANDIDATE", "REVIEW_REQUIRED", "RECAPTURE_REQUIRED"}
+    assert result["anomaly_score"] >= 0
     assert result["overlay_b64"] is not None
     assert result["overlay_b64"].startswith("data:image/png;base64,")

@@ -15,7 +15,7 @@ from ..data.validation import validate_locked_evaluation
 from ..inference.detector import AnomalyDetector
 from ..model.artifacts import ModelArtifact
 from .aupro import compute_aupro
-from .metrics import calculate_3tier_metrics
+from .metrics import calculate_workflow_metrics
 
 
 def _safe_metric(function: Any, labels: np.ndarray, values: np.ndarray) -> float | None:
@@ -77,14 +77,15 @@ def evaluate_category(
     if isinstance(artifact, ModelArtifact) and artifact.metadata.category != resolved_category:
         raise ValueError("Artifact không khớp category của evaluation.")
 
-    detector = AnomalyDetector(model_dir=model_dir or "models", category=resolved_category)
+    model_root = Path(model_dir or "models")
+    detector = AnomalyDetector(model_dir=model_root, category=resolved_category)
     if manifest_obj is None:
         # Evaluation boundary duy nhất được phép đọc test/masks.
         manifest_obj = validate_locked_evaluation(data_dir=data_dir, category=resolved_category)
     if isinstance(manifest_obj, LockedEvaluationManifest) and manifest_obj.category != resolved_category:
         raise ValueError("Evaluation manifest không khớp category của artifact.")
 
-    report_file = Path(output_report) if output_report else Path("reports") / resolved_category / "test_metrics.json"
+    report_file = Path(output_report) if output_report else Path("reports") / resolved_category / "evaluation.json"
     if report_file.exists() and report_file.stat().st_size > 0 and not reopen:
         raise FileExistsError(
             f"Report đã tồn tại tại '{report_file}'. Dùng reopen=True nếu thật sự cần ghi lại."
@@ -98,7 +99,7 @@ def evaluate_category(
     names: list[str | None] = []
     area_ratios: list[float] = []
 
-    print(f"\n[EVALUATION] Locked test cho '{resolved_category}' bằng release freeze...")
+    print(f"\n[EVALUATION] Official test cho '{resolved_category}' (report-only)...")
     for image_path, is_defect, mask_path, defect_type in manifest_obj.get_all_test_items():
         with Image.open(image_path) as image:
             score, heatmap = detector.score(image)
@@ -127,18 +128,17 @@ def evaluate_category(
     score_arr = np.asarray(scores, dtype=np.float32)
     mask_arr = np.asarray(masks)
     map_arr = np.asarray(maps)
-    result = calculate_3tier_metrics(
+    result = calculate_workflow_metrics(
         y_true=y_arr,
         scores=score_arr,
         masks=mask_arr,
         maps=map_arr,
-        auto_pass_threshold=detector.auto_pass_threshold,
+        image_threshold=detector.image_threshold,
     )
     result.update(
         {
             "category": resolved_category,
             "model_version": detector.model_version,
-            "release_id": detector.release_id,
             "test_samples_total": len(labels),
             "test_defect_count": int(y_arr.sum()),
             "test_normal_count": int((y_arr == 0).sum()),
@@ -188,6 +188,6 @@ def evaluate_category(
     print(
         f"[OK] Image AUROC={result['detection']['image_auroc']}, "
         f"AUPRO@0.3={result['localization']['aupro_0.3']}, "
-        f"Defect escape to AUTO_PASS={result['operational_decision']['defect_escape_after_auto_pass']:.4f}"
+        f"False pass-candidate rate={result['operational_decision']['false_pass_candidate_rate']:.4f}"
     )
     return result

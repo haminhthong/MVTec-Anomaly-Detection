@@ -46,9 +46,7 @@ def test_training_never_reads_test_directory(tmp_path: Path) -> None:
         category="leakage_check",
         batch_size=4,
         min_calibration_samples=5,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
 
     with patch("PIL.Image.open", side_effect=recording_open):

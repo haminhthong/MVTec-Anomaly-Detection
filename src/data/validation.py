@@ -167,9 +167,9 @@ def validate_mvtec_category(
     category: str = "bottle",
     check_image_integrity: bool = False,
 ) -> DatasetManifest:
-    """Tạo combined manifest cho CLI/data inspection cũ.
+    """Tạo manifest tổng hợp cho lệnh kiểm tra đầy đủ category.
 
-    Training không gọi hàm này nếu tự resolve dữ liệu; nó gọi
+    Training không gọi hàm này; nó gọi
     ``validate_reference_category`` để giữ test isolation ở mức kiến trúc.
     """
     reference = validate_reference_category(data_dir, category, check_image_integrity)

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from src.api.app import app, registry
+import src.api.app as app_module
 from src.config import TrainConfig
 from src.training.trainer import train_patchcore
 
@@ -40,30 +40,21 @@ def setup_api_model(tmp_path_factory: pytest.TempPathFactory):
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
     _ = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
 
-    # Point registry to test models_dir
-    original_base = registry.base_dir
-    registry.base_dir = models_dir
-    registry.clear_cache()
+    original_model_dir = app_module.MODEL_DIR
+    app_module.MODEL_DIR = models_dir
 
     yield category
 
-    registry.base_dir = original_base
-    registry.clear_cache()
+    app_module.MODEL_DIR = original_model_dir
 
 
-def test_health_endpoints(setup_api_model: str) -> None:
-    """Test /health and /health/live."""
-    client = TestClient(app)
-
-    res_live = client.get("/health/live")
-    assert res_live.status_code == 200
-    assert res_live.json() == {"status": "alive"}
+def test_health_endpoint(setup_api_model: str) -> None:
+    """Health chỉ kiểm tra model category có sẵn."""
+    client = TestClient(app_module.app)
 
     res_health = client.get("/health")
     assert res_health.status_code == 200
@@ -73,26 +64,9 @@ def test_health_endpoints(setup_api_model: str) -> None:
     assert setup_api_model in data["categories"]
 
 
-def test_models_registry_endpoints(setup_api_model: str) -> None:
-    """Test /models and /models/{category}."""
-    client = TestClient(app)
-
-    res = client.get("/models")
-    assert res.status_code == 200
-    assert setup_api_model in res.json()["categories"]
-
-    res_detail = client.get(f"/models/{setup_api_model}")
-    assert res_detail.status_code == 200
-    assert res_detail.json()["category"] == setup_api_model
-
-    # 404 on missing model
-    res_404 = client.get("/models/missing_category_xyz")
-    assert res_404.status_code == 404
-
-
 def test_inspect_single_image(setup_api_model: str) -> None:
     """Test POST /inspect with single image upload."""
-    client = TestClient(app)
+    client = TestClient(app_module.app)
 
     img = Image.new("RGB", (64, 64), color="red")
     buf = io.BytesIO()
@@ -106,14 +80,14 @@ def test_inspect_single_image(setup_api_model: str) -> None:
     assert res.status_code == 200
     data = res.json()
     assert data["category"] == setup_api_model
-    assert data["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
-    assert "scores" in data
-    assert "localization" in data
+    assert data["decision"] in {"PASS_CANDIDATE", "REVIEW_REQUIRED", "RECAPTURE_REQUIRED"}
+    assert "image_threshold" in data
+    assert "anomalous_area_ratio" in data
 
 
 def test_inspect_batch_images(setup_api_model: str) -> None:
     """Test POST /inspect/batch with multiple image files."""
-    client = TestClient(app)
+    client = TestClient(app_module.app)
 
     files_payload = []
     for i in range(3):
@@ -135,7 +109,7 @@ def test_inspect_batch_images(setup_api_model: str) -> None:
 
 def test_inspect_missing_category_404() -> None:
     """Test POST /inspect with non-existent category returns 404."""
-    client = TestClient(app)
+    client = TestClient(app_module.app)
     img = Image.new("RGB", (32, 32), color="blue")
     buf = io.BytesIO()
     img.save(buf, format="PNG")

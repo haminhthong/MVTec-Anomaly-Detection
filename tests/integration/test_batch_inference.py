@@ -37,9 +37,7 @@ def test_batch_inference_parity(tmp_path: Path) -> None:
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
     _ = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
 
@@ -61,10 +59,10 @@ def test_batch_inference_parity(tmp_path: Path) -> None:
 
     for single_r, batch_r in zip(single_results, batch_results, strict=True):
         assert single_r["decision"] == batch_r["decision"]
-        assert single_r["severity"] == batch_r["severity"]
+        assert single_r["decision"] == batch_r["decision"]
         # Score parity within small floating point difference
         assert np.isclose(
-            single_r["scores"]["anomaly_score"],
-            batch_r["scores"]["anomaly_score"],
+            single_r["anomaly_score"],
+            batch_r["anomaly_score"],
             atol=1e-3,
         )

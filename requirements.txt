@@ -9,9 +9,7 @@ scipy==1.15.3
 numpy==2.2.6
 pillow==11.3.0
 matplotlib==3.10.3
-joblib==1.5.1
 psutil==7.0.0
-requests==2.32.5
 pytest==8.4.1
 python-multipart==0.0.20
 huggingface-hub==0.36.0

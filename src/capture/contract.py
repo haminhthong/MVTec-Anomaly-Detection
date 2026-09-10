@@ -1,4 +1,4 @@
-"""Hợp đồng đầu vào camera cho một production line."""
+"""Kiểm tra nhẹ chất lượng ảnh trước khi chạy model."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class CaptureContract:
 
     expected_width: int | None = None
     expected_height: int | None = None
-    max_blur_score: float | None = None
+    min_sharpness_score: float | None = None
     min_exposure: float | None = None
     max_exposure: float | None = None
     roi: tuple[int, int, int, int] | None = None
@@ -31,13 +31,13 @@ class CaptureContract:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "CaptureContract":
-        """Khôi phục contract từ config; config cũ dùng contract rỗng."""
+        """Khôi phục input check từ metadata model."""
         values = data or {}
         roi = values.get("roi")
         return cls(
             expected_width=values.get("expected_width"),
             expected_height=values.get("expected_height"),
-            max_blur_score=values.get("max_blur_score"),
+            min_sharpness_score=values.get("min_sharpness_score"),
             min_exposure=values.get("min_exposure"),
             max_exposure=values.get("max_exposure"),
             roi=tuple(roi) if roi is not None else None,

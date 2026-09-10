@@ -39,7 +39,7 @@ def run_data_pipeline(
     check_integrity: bool = False,
     save_manifest: bool = True,
 ) -> DatasetManifest:
-    """Kiểm tra đầy đủ category và tạo combined manifest cho CLI data cũ."""
+    """Kiểm tra đầy đủ category và tạo manifest cho lệnh data."""
     print(f"\n[PIPELINE 1/4: DATA] Validating dataset for category '{category}'...")
     manifest = validate_mvtec_category(
         data_dir=data_dir, category=category, check_image_integrity=check_integrity
@@ -65,14 +65,14 @@ def run_training_pipeline(
     models_dir: str | Path = "models",
     data_dir: str | Path = "data/raw",
 ) -> ModelArtifact:
-    """Xây release model từ reference normal và calibration held-out."""
+    """Xây model category từ reference normal và calibration held-out."""
     cfg = config or TrainConfig()
     print(f"\n[PIPELINE 2/4: MODEL BUILDING] Building artifact for '{cfg.category}' (backbone: {cfg.backbone})...")
     artifact = train_patchcore(manifest=manifest, config=cfg, models_dir=models_dir, data_dir=data_dir)
     print(
-        f"  [OK] Model release built for '{cfg.category}': "
+        f"  [OK] Model built for '{cfg.category}': "
         f"Memory bank size={artifact.coreset_info['size']}, "
-        f"AUTO_PASS threshold={artifact.threshold_policy.auto_pass_threshold:.4f}."
+        f"image threshold={artifact.thresholds.image_threshold:.4f}."
     )
     return artifact
 
@@ -123,16 +123,15 @@ def run_end_to_end_pipeline(
     data_dir: str | Path = "data/raw",
     models_dir: str | Path = "models",
     output_report: str | Path | None = None,
-    model_version: str = "1.0.0",
     reopen: bool = False,
 ) -> dict[str, Any]:
-    """Chạy Reference -> Training -> Locked Evaluation theo đúng boundary."""
+    """Chạy Reference -> Training -> Official Evaluation theo đúng boundary."""
     print(f"\n{'='*70}\n [MASTER PIPELINE] Executing end-to-end lifecycle for '{category.upper()}'\n{'='*70}")
     # Tách hai boundary: reference được resolve trước; locked test chỉ resolve sau train.
     reference_manifest = validate_reference_category(data_dir=data_dir, category=category)
 
     # 1. MODEL BUILDING PIPELINE (chỉ nhận normal reference)
-    cfg = TrainConfig(category=category, backbone=backbone, model_version=model_version)
+    cfg = TrainConfig(category=category, backbone=backbone)
     artifact = run_training_pipeline(
         manifest=reference_manifest,
         config=cfg,
@@ -165,7 +164,6 @@ def main() -> None:
     run_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
     run_parser.add_argument("--models-dir", default="models", help="Models directory")
     run_parser.add_argument("--output-report", default=None, help="Report file path")
-    run_parser.add_argument("--model-version", default="1.0.0", help="Immutable model release version")
     run_parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # data: kiểm tra dữ liệu.
@@ -173,13 +171,12 @@ def main() -> None:
     data_parser.add_argument("--category", default="bottle", help="Category name")
     data_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
 
-    # train: xây release model.
+    # train: xây model category.
     train_parser = subparsers.add_parser("train", help="Build model and calibrate threshold policy")
     train_parser.add_argument("--category", default="bottle", help="Category name")
     train_parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
     train_parser.add_argument("--models-dir", default="models", help="Models directory")
     train_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
-    train_parser.add_argument("--model-version", default="1.0.0", help="Immutable model release version")
 
     # evaluate: đọc locked test report-only.
     eval_parser = subparsers.add_parser("evaluate", help="Đánh giá locked test, report-only")
@@ -203,13 +200,12 @@ def main() -> None:
             data_dir=args.data_dir,
             models_dir=args.models_dir,
             output_report=args.output_report,
-            model_version=args.model_version,
             reopen=args.reopen_locked_test,
         )
     elif args.command == "data":
         run_data_pipeline(data_dir=args.data_dir, category=args.category)
     elif args.command == "train":
-        cfg = TrainConfig(category=args.category, backbone=args.backbone, model_version=args.model_version)
+        cfg = TrainConfig(category=args.category, backbone=args.backbone)
         run_training_pipeline(config=cfg, models_dir=args.models_dir, data_dir=args.data_dir)
     elif args.command == "evaluate":
         run_evaluation_pipeline(

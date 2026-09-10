@@ -1,0 +1,41 @@
+{
+  "category": "bottle",
+  "model_version": "1.0.0",
+  "test_samples_total": 83,
+  "test_normal_count": 20,
+  "test_defect_count": 63,
+  "dataset_fingerprint": "cebbd088b90c5c60bee3c10f9731f4e0fa85fe635e3416c80eb648509cd2957c",
+  "detection": {
+    "image_auroc": 1.0,
+    "image_average_precision": 1.0
+  },
+  "localization": {
+    "pixel_auroc": 0.9817617,
+    "pixel_average_precision": 0.7157053,
+    "aupro_0.3": 0.9410057
+  },
+  "operational_decision": {
+    "image_threshold": 2.8441735,
+    "pass_candidate_coverage": 0.2048193,
+    "normal_pass_candidate_rate": 0.85,
+    "normal_review_required_rate": 0.15,
+    "defect_review_required_rate": 1.0,
+    "false_pass_candidate_rate": 0.0,
+    "review_required_rate": 0.7951807,
+    "counts": {
+      "pass_candidate": 17,
+      "review_required": 66,
+      "normal_pass_candidate": 17,
+      "normal_review_required": 3,
+      "defect_review_required": 63,
+      "defect_pass_candidate": 0
+    },
+    "confusion_matrix": {
+      "tp_review_required_defect": 63,
+      "fp_review_required_normal": 3,
+      "tn_pass_candidate_normal": 17,
+      "fn_pass_candidate_defect": 0
+    }
+  },
+  "operational_note": "P99 threshold là heuristic normal-only; không phải guarantee trên dữ liệu mới."
+}

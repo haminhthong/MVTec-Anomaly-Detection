@@ -20,20 +20,23 @@ def test_scoring_determinism_and_reproducibility(tmp_path: Path) -> None:
     np.save(model_dir / "memory_bank.npy", memory)
 
     config_data = {
-        "schema_version": 3,
+        "model": {
+            "category": "regr_test",
+            "model_version": "1.0.0",
+            "backbone": "resnet18",
+            "pretrained": True,
+            "feature_layers": ["layer2", "layer3"],
+        },
         "category": "regr_test",
-        "version": "regr-v1",
         "smooth_sigma": 1.0,
-        "threshold": 3.0,
-        "review_threshold": 2.5,
-        "pixel_threshold": 2.8,
+        "thresholds": {"image_threshold": 3.0, "pixel_threshold": 2.8},
         "preprocessing": {
             "image_size": [224, 224],
             "mean": [0.485, 0.456, 0.406],
             "std": [0.229, 0.224, 0.225],
         },
     }
-    (model_dir / "config.json").write_text(json.dumps(config_data), encoding="utf-8")
+    (model_dir / "metadata.json").write_text(json.dumps(config_data), encoding="utf-8")
 
     det1 = AnomalyDetector(model_dir=str(model_dir))
     det2 = AnomalyDetector(model_dir=str(model_dir))

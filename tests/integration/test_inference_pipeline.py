@@ -21,15 +21,20 @@ def test_inference_with_artifact(tmp_path: Path) -> None:
     memory = np.random.randn(20, 384).astype(np.float32)
     np.save(model_dir / "memory_bank.npy", memory)
 
-    # Artifact config tương thích với schema cũ.
+    # Artifact runtime hiện tại chỉ chứa metadata và thresholds.
     config_data = {
-        "artifact_schema_version": 4,
+        "model": {
+            "model_version": "1.0.0",
+            "category": "test_box",
+            "backbone": "resnet18",
+            "pretrained": True,
+            "feature_layers": ["layer2", "layer3"],
+        },
         "category": "test_box",
         "model_version": "1.0.0",
         "smooth_sigma": 1.0,
         "thresholds": {
-            "review_threshold": 2.8,
-            "fail_threshold": 3.5,
+            "image_threshold": 3.5,
             "pixel_threshold": 3.0,
         },
         "preprocessing": {
@@ -38,11 +43,10 @@ def test_inference_with_artifact(tmp_path: Path) -> None:
             "std": [0.229, 0.224, 0.225],
         },
     }
-    (model_dir / "config.json").write_text(json.dumps(config_data), encoding="utf-8")
+    (model_dir / "metadata.json").write_text(json.dumps(config_data), encoding="utf-8")
 
     det = AnomalyDetector(model_dir=str(model_dir))
-    assert det.auto_pass_threshold == 3.5
-    assert det.review_threshold == 3.5
+    assert det.image_threshold == 3.5
     assert det.pixel_threshold == 3.0
     assert det.memory_bank.size == 20
 
@@ -54,10 +58,7 @@ def test_inference_with_artifact(tmp_path: Path) -> None:
     res = det.inspect(img, include_overlay=True)
     assert "inspection_id" in res
     assert "decision" in res
-    assert "severity" in res
-    assert "scores" in res
-    assert "localization" in res
-    assert "model" in res
-    assert res["decision"] in {"AUTO_PASS", "HUMAN_REVIEW", "RECAPTURE_REQUIRED"}
-    assert res["severity"] is None
+    assert "image_threshold" in res
+    assert "anomalous_area_ratio" in res
+    assert res["decision"] in {"PASS_CANDIDATE", "REVIEW_REQUIRED", "RECAPTURE_REQUIRED"}
     assert res["overlay_b64"].startswith("data:image/png;base64,")

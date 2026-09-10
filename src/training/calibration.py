@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..model.artifacts import ThresholdPolicy
+from ..model.artifacts import Thresholds
 
 
 def split_reference_dev_calibration(
@@ -20,7 +20,7 @@ def split_reference_dev_calibration(
     """Tách Reference / Dev / Calibration ổn định và không chồng lấn.
 
     Reference dùng xây memory bank, Dev dùng chọn cấu hình và stress test,
-    Calibration chỉ dùng khóa ngưỡng AUTO_PASS. Không split nào đọc test set.
+    Calibration chỉ dùng khóa image/pixel threshold. Không split nào đọc test set.
     """
     ordered = sorted(Path(path) for path in paths)
     if not ordered:
@@ -55,42 +55,20 @@ def split_reference_dev_calibration(
     return reference, dev, calibration
 
 
-def split_normal_paths(
-    paths: list[Path],
-    calibration_fraction: float = 0.2,
-    seed: int = 42,
-    min_calibration_samples: int = 20,
-) -> tuple[list[Path], list[Path]]:
-    """API cũ: tách Reference và Calibration, không tạo Dev set."""
-    reference, _, calibration = split_reference_dev_calibration(
-        paths,
-        dev_fraction=0.0,
-        calibration_fraction=calibration_fraction,
-        seed=seed,
-        min_calibration_samples=min_calibration_samples,
-    )
-    return reference, calibration
-
-
 def calibrate_thresholds(
     normal_scores: list[float],
     normal_heatmaps: list[np.ndarray],
-    auto_pass_quantile: float = 0.99,
+    image_quantile: float = 0.99,
     pixel_quantile: float = 0.99,
-    fail_quantile: float | None = None,
-    review_quantile: float | None = None,
-) -> ThresholdPolicy:
-    """Khóa ngưỡng AUTO_PASS và pixel từ cohort calibration normal.
+) -> Thresholds:
+    """Khóa image threshold và pixel threshold từ normal calibration.
 
     Quantile đuôi trên chỉ là heuristic trên sample calibration; nó không phải
     cam kết false-reject rate 1% trong production và không được tối ưu bằng defect.
-    ``fail_quantile``/``review_quantile`` chỉ giữ để đọc caller cũ.
     """
     if not normal_scores:
         raise ValueError("normal_scores đang rỗng, không thể calibration.")
-    def normalize_quantile(name: str, value: float | None) -> float | None:
-        if value is None:
-            return None
+    def normalize_quantile(name: str, value: float) -> float:
         try:
             normalized = float(value)
         except (TypeError, ValueError) as exc:
@@ -99,26 +77,15 @@ def calibrate_thresholds(
             raise ValueError(f"{name} phải thuộc khoảng [0.5, 1.0).")
         return normalized
 
-    selected_quantile = normalize_quantile(
-        "auto_pass_quantile",
-        fail_quantile if fail_quantile is not None else auto_pass_quantile,
-    )
+    selected_quantile = normalize_quantile("image_quantile", image_quantile)
     pixel_quantile = normalize_quantile("pixel_quantile", pixel_quantile)
-    review_quantile = normalize_quantile("review_quantile", review_quantile)
 
     values = np.asarray(normal_scores, dtype=np.float32)
     if values.ndim != 1 or not np.isfinite(values).all():
         raise ValueError("normal_scores phải là vector một chiều chỉ gồm số hữu hạn.")
     if normal_heatmaps and len(normal_heatmaps) != len(normal_scores):
         raise ValueError("normal_heatmaps phải có cùng số mẫu với normal_scores.")
-    auto_pass_threshold = float(np.quantile(values, selected_quantile))
-    # Chỉ giữ review alias khi caller legacy truyền fail_quantile; artifact mới
-    # không dùng ngưỡng này để quyết định.
-    review_threshold = (
-        float(np.quantile(values, review_quantile if review_quantile is not None else 0.95))
-        if fail_quantile is not None
-        else auto_pass_threshold
-    )
+    image_threshold = float(np.quantile(values, selected_quantile))
     if normal_heatmaps:
         pixels = np.concatenate(
             [np.asarray(heatmap, dtype=np.float32).ravel() for heatmap in normal_heatmaps]
@@ -127,9 +94,8 @@ def calibrate_thresholds(
             raise ValueError("normal_heatmaps phải chứa pixel số hữu hạn và không rỗng.")
         pixel_threshold = float(np.quantile(pixels, pixel_quantile))
     else:
-        pixel_threshold = auto_pass_threshold
-    return ThresholdPolicy(
-        review_threshold=review_threshold,
-        auto_pass_threshold=auto_pass_threshold,
+        pixel_threshold = image_threshold
+    return Thresholds(
+        image_threshold=image_threshold,
         pixel_threshold=pixel_threshold,
     )

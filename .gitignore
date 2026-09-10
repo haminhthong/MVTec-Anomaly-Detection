@@ -9,8 +9,8 @@ data/raw/*
 data/processed/*
 models/*
 !models/.gitkeep
-!models/config.json
-!models/**/config.json
+!models/metadata.json
+!models/**/metadata.json
 !models/memory_bank.npy
 !models/**/memory_bank.npy
 reports/*.json
@@ -18,5 +18,5 @@ reports/**/*.json
 reports/*.csv
 !reports/.gitkeep
 !reports/benchmark.csv
-!reports/bottle/test_metrics.json
+!reports/bottle/evaluation.json
 !reports/sample_outputs/

@@ -1,4 +1,4 @@
-"""CLI Entrypoint for Model Building Pipeline."""
+"""Điểm vào CLI để xây dựng model từ ảnh normal."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def main(config: TrainConfig | None = None) -> None:
-    """Entry point for 'python -m src.train'."""
+    """Điểm vào cho lệnh ``python -m src.train``."""
     cfg = config or parse_args()
     train_patchcore(cfg)
 

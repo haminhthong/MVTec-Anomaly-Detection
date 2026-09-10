@@ -15,8 +15,8 @@ from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from .transforms import TFM, build_transform
-from .validation import DatasetManifest, validate_mvtec_category
+from .transforms import TFM
+from .validation import _find_category_root
 
 
 class ImageFolderDataset(Dataset):
@@ -57,7 +57,7 @@ class ImageFolderDataset(Dataset):
 
 
 def find_category_root(raw: str | Path = "data/raw", category: str = "bottle") -> Path:
-    """Tìm và validate thư mục category dưới thư mục dữ liệu.
+    """Tìm thư mục category mà không đọc test hoặc ground-truth.
 
     Args:
         raw: Đường dẫn thư mục dữ liệu raw.
@@ -66,5 +66,4 @@ def find_category_root(raw: str | Path = "data/raw", category: str = "bottle") -
     Returns:
         Path: Đường dẫn tới thư mục gốc của category.
     """
-    manifest = validate_mvtec_category(data_dir=raw, category=category)
-    return manifest.root_path
+    return _find_category_root(raw, category)

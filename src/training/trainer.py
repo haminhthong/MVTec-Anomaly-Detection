@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import random
 from typing import Any
@@ -22,7 +21,6 @@ from ..model.artifacts import (
     ModelArtifact,
     ModelMetadata,
     SplitManifest,
-    write_integrity_manifest,
 )
 from ..model.coreset import select_coreset_indices
 from ..model.feature_extractor import FeatureExtractor
@@ -47,54 +45,16 @@ def _relative_to_root(root: Path, path: Path) -> str:
         return path.name
 
 
-def _update_production_pointer(models_root: Path, category: str, release_id: str, line_id: str | None) -> None:
-    """Cập nhật pointer production; release directory không bị overwrite."""
-    pointer_path = models_root / "production.json"
-    if pointer_path.exists():
-        try:
-            data = json.loads(pointer_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"production.json hiện tại không hợp lệ: {exc}") from exc
-    else:
-        data = {"categories": {}, "lines": {}}
-    if not isinstance(data, dict):
-        raise ValueError("production.json phải là một JSON object.")
-    categories = data.setdefault("categories", {})
-    lines = data.setdefault("lines", {})
-    if not isinstance(categories, dict) or not isinstance(lines, dict):
-        raise ValueError("production.json phải chứa object 'categories' và 'lines'.")
-    categories[category] = f"releases/{release_id}"
-    if line_id:
-        lines[line_id] = {"category": category, "release_id": release_id}
-    pointer_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = pointer_path.with_name(f"{pointer_path.name}.tmp")
-    temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    temp_path.replace(pointer_path)
-
-
-def _save_legacy_category_alias(release_dir: Path, models_root: Path, category: str) -> None:
-    """Tạo alias category để CLI cũ vẫn chạy; release thật nằm trong releases/."""
-    alias_dir = models_root / category
-    alias_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("memory_bank.npy", "config.json", "split_manifest.json", "manifest.json", "reference_manifest.json"):
-        source = release_dir / name
-        if source.exists():
-            target = alias_dir / name
-            # Sao chép nguyên byte để manifest integrity vẫn khớp release.
-            target.write_bytes(source.read_bytes())
-
-
 def train_patchcore(
     manifest: DatasetManifest | NormalReferenceManifest | TrainConfig | None = None,
     config: TrainConfig | None = None,
     models_dir: str | Path = "models",
     data_dir: str | Path = "data/raw",
 ) -> ModelArtifact:
-    """Xây memory bank, calibration policy và immutable release.
+    """Xây memory bank, threshold và model artifact cho một category.
 
-    Nếu không truyền manifest, trainer chỉ gọi validator reference-only. Một
-    combined DatasetManifest cũ vẫn được chấp nhận nhưng trainer chỉ lấy
-    ``train_good`` từ object đó.
+    Nếu không truyền manifest, trainer chỉ gọi validator reference-only. Khi
+    nhận manifest tổng hợp từ bước kiểm tra dữ liệu, trainer chỉ lấy ``train_good``.
     """
     if isinstance(manifest, TrainConfig):
         cfg = manifest
@@ -112,7 +72,7 @@ def train_patchcore(
             f"Manifest category '{manifest_obj.category}' không khớp config '{cfg.category}'."
         )
 
-    # Nếu caller truyền combined manifest cũ, chỉ dựng lại reference manifest
+    # Nếu caller truyền manifest tổng hợp, chỉ dựng lại reference manifest
     # từ train/good để artifact training không mang theo test/mask provenance.
     reference_manifest = (
         manifest_obj
@@ -189,27 +149,20 @@ def train_patchcore(
         calibration_scores.append(float(np.percentile(smoothed, cfg.scoring_percentile)))
         calibration_heatmaps.append(smoothed)
 
-    threshold_policy = calibrate_thresholds(
+    thresholds = calibrate_thresholds(
         normal_scores=calibration_scores,
         normal_heatmaps=calibration_heatmaps,
-        auto_pass_quantile=cfg.effective_auto_pass_quantile,
+        image_quantile=cfg.image_quantile,
         pixel_quantile=cfg.pixel_quantile,
     )
 
     models_root = Path(models_dir)
-    release_id = f"{cfg.category}-v{cfg.model_version}"
-    release_dir = models_root / "releases" / release_id
-    if release_dir.exists():
-        raise FileExistsError(
-            f"Release '{release_id}' đã tồn tại. Tạo model_version mới thay vì overwrite."
-        )
-    release_dir.mkdir(parents=True, exist_ok=False)
+    category_dir = models_root / cfg.category
+    category_dir.mkdir(parents=True, exist_ok=True)
 
     weights_name = getattr(network, "weights_name", None) or cfg.weights
     metadata = ModelMetadata(
-        model_version=cfg.model_version,
-        pipeline_version=cfg.pipeline_version,
-        artifact_schema_version=5,
+        model_version="1.0.0",
         category=cfg.category,
         backbone=cfg.backbone,
         weights=weights_name,
@@ -218,11 +171,10 @@ def train_patchcore(
         created_at=datetime.now(timezone.utc).isoformat(),
         device_used=device,
         dataset_fingerprint=dataset_fingerprint,
-        release_id=release_id,
     )
     artifact = ModelArtifact(
         metadata=metadata,
-        threshold_policy=threshold_policy,
+        thresholds=thresholds,
         preprocessing=cfg.preprocessing,
         coreset_info={
             "algorithm": "greedy_k_center",
@@ -238,7 +190,7 @@ def train_patchcore(
         },
         calibration={
             "source": "held_out_train_good_calibration",
-            "auto_pass_quantile": cfg.effective_auto_pass_quantile,
+            "image_quantile": cfg.image_quantile,
             "pixel_quantile": cfg.pixel_quantile,
             "samples": len(calibration_paths),
             "note": "Heuristic normal-only upper-tail threshold; khong la bao dam FRR production.",
@@ -246,27 +198,16 @@ def train_patchcore(
         smooth_sigma=cfg.smooth_sigma,
         dataset_fingerprint=dataset_fingerprint,
         capture_contract=cfg.capture_contract,
-        inspection_policy={"auto_pass_only": True, "human_review_for_anomaly": True},
-        reference_manifest={
-            "manifest_type": getattr(manifest_obj, "manifest_type", "normal_reference"),
-            "category": cfg.category,
-            "fingerprint": reference_manifest.fingerprint,
-            "reference_count": len(reference_paths),
-            "dev_count": len(dev_paths),
-            "calibration_count": len(calibration_paths),
-        },
     )
-    memory_bank.save(release_dir / "memory_bank.npy")
-    split_manifest.save(release_dir / "split_manifest.json")
-    reference_manifest.save(release_dir / "reference_manifest.json")
-    artifact.save(release_dir)
-    write_integrity_manifest(release_dir, artifact, dataset_sha256=dataset_fingerprint)
-    _save_legacy_category_alias(release_dir, models_root, cfg.category)
-    _update_production_pointer(models_root, cfg.category, release_id, cfg.line_id)
+    memory_bank.save(category_dir / "memory_bank.npy")
+    artifact.save(category_dir)
+    reports_dir = models_root.parent / "reports" / cfg.category
+    split_manifest.save(reports_dir / "training_split.json")
+    reference_manifest.save(reports_dir / "reference_manifest.json")
 
     print(
-        f"[SUCCESS] '{cfg.category}' release={release_id}: memory={compact_memory.shape}, "
-        f"AUTO_PASS threshold={threshold_policy.auto_pass_threshold:.4f}, "
+        f"[SUCCESS] '{cfg.category}': memory={compact_memory.shape}, "
+        f"image threshold={thresholds.image_threshold:.4f}, "
         f"calibration={len(calibration_paths)} normal images"
     )
     return artifact

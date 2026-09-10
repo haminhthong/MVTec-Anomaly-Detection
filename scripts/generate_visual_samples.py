@@ -2,7 +2,7 @@
 
 Sinh ra ảnh 4 khung hình:
 [Original Image] | [Ground Truth Mask] | [Anomaly Heatmap] | [Overlay & Decision]
-với một ngưỡng AUTO_PASS và diện tích vùng vượt pixel threshold.
+với image threshold và diện tích vùng vượt pixel threshold.
 """
 
 from __future__ import annotations
@@ -37,14 +37,14 @@ def generate_sample_comparison(
     image = Image.open(image_path).convert("RGB")
     res = detector.inspect(image, include_overlay=False)
 
-    score = res["scores"]["anomaly_score"]
+    score = res["anomaly_score"]
     decision = res["decision"]
-    area_ratio = res["localization"]["anomalous_area_ratio"]
-    auto_pass_threshold = res["scores"]["auto_pass_threshold"]
-    pixel_threshold = res["localization"]["pixel_threshold"]
+    area_ratio = res["anomalous_area_ratio"]
+    image_threshold = res["image_threshold"]
+    pixel_threshold = res["pixel_threshold"]
     _, heatmap = detector.score(image)
 
-    if decision == "HUMAN_REVIEW":
+    if decision == "REVIEW_REQUIRED":
         decision_color = "crimson"
     elif decision == "RECAPTURE_REQUIRED":
         decision_color = "darkorange"
@@ -106,7 +106,7 @@ def generate_sample_comparison(
         ax.axis("off")
 
     status_text = (
-        f"Defect: {title_suffix} | Score: {score:.3f} | AUTO_PASS Th: {auto_pass_threshold:.3f} | "
+        f"Defect: {title_suffix} | Score: {score:.3f} | Image Th: {image_threshold:.3f} | "
         f"Pixel Th: {pixel_threshold:.3f} | Area: {area_ratio*100:.1f}% | Decision: {decision}"
     )
     fig.suptitle(
@@ -129,7 +129,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Sinh visual sample cho MVTec AD")
     parser.add_argument("--category", default="bottle", help="Category cần trực quan hóa")
     parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
-    parser.add_argument("--model-dir", default="models", help="Thư mục model release")
+    parser.add_argument("--model-dir", default="models", help="Thư mục models theo category")
     parser.add_argument("--output-dir", default="reports/sample_outputs", help="Thư mục output")
     args = parser.parse_args()
 

@@ -10,7 +10,7 @@ import pytest
 
 from src.data.transforms import PreprocessingConfig
 from src.inference.detector import AnomalyDetector
-from src.model.artifacts import ModelArtifact, ModelMetadata, ThresholdPolicy
+from src.model.artifacts import ModelArtifact, ModelMetadata, Thresholds
 
 
 def test_train_inference_preprocessing_consistency(tmp_path: Path) -> None:
@@ -27,7 +27,7 @@ def test_train_inference_preprocessing_consistency(tmp_path: Path) -> None:
 
     artifact = ModelArtifact(
         metadata=ModelMetadata(model_version="1.0.0", category="custom_cat"),
-        threshold_policy=ThresholdPolicy(review_threshold=2.0, fail_threshold=2.5, pixel_threshold=2.5),
+        thresholds=Thresholds(image_threshold=2.5, pixel_threshold=2.5),
         preprocessing=custom_prep,
         coreset_info={"size": 10},
     )

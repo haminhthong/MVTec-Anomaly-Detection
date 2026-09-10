@@ -39,21 +39,13 @@ def test_train_config_validations() -> None:
     with pytest.raises(ValueError, match="min_calibration_samples"):
         TrainConfig(min_calibration_samples=2).validate()
 
-    # Review quantile >= threshold quantile
-    with pytest.raises(ValueError, match="review_quantile"):
-        TrainConfig(review_quantile=0.99, threshold_quantile=0.95).validate()
+    # Image quantile ngoài dải
+    with pytest.raises(ValueError, match="image_quantile"):
+        TrainConfig(image_quantile=0.2).validate()
 
     # Pixel quantile ngoài dải
     with pytest.raises(ValueError, match="pixel_quantile"):
         TrainConfig(pixel_quantile=0.2).validate()
-
-    # Coreset fraction <= 0
-    with pytest.raises(ValueError, match="coreset_fraction"):
-        TrainConfig(coreset_fraction=0.0).validate()
-
-    # Coreset min > max
-    with pytest.raises(ValueError, match="min phải <= max"):
-        TrainConfig(min_coreset_size=500, max_coreset_size=100).validate()
 
     # Smooth sigma âm
     with pytest.raises(ValueError, match="smooth_sigma"):

@@ -10,7 +10,7 @@ import sqlite3
 from typing import Any
 
 
-ALLOWED_DECISIONS = {"RECAPTURE_REQUIRED", "AUTO_PASS", "HUMAN_REVIEW"}
+ALLOWED_DECISIONS = {"RECAPTURE_REQUIRED", "PASS_CANDIDATE", "REVIEW_REQUIRED"}
 ALLOWED_QC_OUTCOMES = {"QC_PASS", "QC_REJECT"}
 
 
@@ -41,7 +41,6 @@ class InspectionStore:
                 """
                 CREATE TABLE IF NOT EXISTS inspections (
                     inspection_id TEXT PRIMARY KEY,
-                    line_id TEXT,
                     camera_id TEXT,
                     inspected_at TEXT NOT NULL,
                     model_version TEXT NOT NULL,
@@ -68,19 +67,17 @@ class InspectionStore:
         """Ghi prediction; không bao giờ append prediction vào memory bank."""
         if result.get("decision") not in ALLOWED_DECISIONS:
             raise ValueError(f"decision không hợp lệ: {result.get('decision')!r}.")
-        scores = result.get("scores", {})
-        localization = result.get("localization", {})
-        model = result.get("model", {})
+        anomaly_score = result.get("anomaly_score")
+        anomaly_extent = result.get("anomalous_area_ratio", 0.0)
         inspected_at = result.get("timestamp") or datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO inspections(
-                    inspection_id,line_id,camera_id,inspected_at,model_version,policy_version,
+                    inspection_id,camera_id,inspected_at,model_version,policy_version,
                     anomaly_score,anomaly_extent,decision,image_ref,overlay_ref,payload_json
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(inspection_id) DO UPDATE SET
-                    line_id=excluded.line_id,
                     camera_id=excluded.camera_id,
                     inspected_at=excluded.inspected_at,
                     model_version=excluded.model_version,
@@ -94,13 +91,12 @@ class InspectionStore:
                 """,
                 (
                     result["inspection_id"],
-                    result.get("line_id"),
                     result.get("camera_id"),
                     inspected_at,
-                    model.get("version", result.get("model_version", "unknown")),
+                    result.get("model_version", "unknown"),
                     policy_version,
-                    scores.get("anomaly_score"),
-                    localization.get("anomalous_area_ratio"),
+                    anomaly_score,
+                    anomaly_extent,
                     result["decision"],
                     result.get("image_ref"),
                     result.get("overlay_ref"),

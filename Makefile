@@ -11,7 +11,7 @@ train:
 	python -m src.pipeline train --category bottle
 
 evaluate:
-	python -m src.pipeline evaluate --category bottle --output-report reports/bottle/test_metrics_make.json
+	python -m src.pipeline evaluate --category bottle --output-report reports/bottle/evaluation.json
 
 serve:
 	uvicorn src.api:app --host 0.0.0.0 --port 8000

@@ -8,31 +8,31 @@ from src.inference.localization import compute_anomalous_area_ratio
 
 
 def test_classify_decision_cases() -> None:
-    """Kiểm tra policy V1 chỉ có AUTO_PASS và HUMAN_REVIEW."""
-    auto_pass_th = 3.0
+    """Kiểm tra hai trạng thái triage không suy ra QC outcome."""
+    image_threshold = 3.0
 
     # Điểm dưới ngưỡng được tự động thông qua.
     dec, sev = classify_decision_and_severity(
-        anomaly_score=2.5, review_threshold=auto_pass_th
+        anomaly_score=2.5, image_threshold=image_threshold
     )
-    assert dec == "AUTO_PASS"
+    assert dec == "PASS_CANDIDATE"
     assert sev == "NORMAL"
 
     # Điểm bằng hoặc vượt ngưỡng luôn chuyển người kiểm tra.
     dec, sev = classify_decision_and_severity(
-        anomaly_score=3.5, review_threshold=auto_pass_th
+        anomaly_score=3.5, image_threshold=image_threshold
     )
-    assert dec == "HUMAN_REVIEW"
+    assert dec == "REVIEW_REQUIRED"
     assert sev == "ANOMALY_LOCALIZED"
 
     # Diện tích/peak chỉ là evidence, không tạo business severity.
     dec, sev = classify_decision_and_severity(
         anomaly_score=4.2,
-        review_threshold=auto_pass_th,
+        image_threshold=image_threshold,
         anomalous_area_ratio=0.01,
         peak_score=4.5,
     )
-    assert dec == "HUMAN_REVIEW"
+    assert dec == "REVIEW_REQUIRED"
     assert sev == "ANOMALY_LOCALIZED"
 
 

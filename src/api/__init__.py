@@ -1,20 +1,12 @@
-"""Schema API nhẹ; FastAPI app được lazy-load khi khởi động service."""
+"""Public API schema và FastAPI app lazy-load."""
 
 from __future__ import annotations
 
-from .schemas import (
-    BatchInspectionResponse,
-    HealthResponse,
-    InspectionResponse,
-    LocalizationBreakdown,
-    ModelBreakdown,
-    ReadinessResponse,
-    ScoreBreakdown,
-)
+from .schemas import BatchInspectionResponse, HealthResponse, InspectionResponse
 
 
 def __getattr__(name: str):
-    """Nạp FastAPI app và health khi caller chạy server."""
+    """Nạp app sau khi schema đã sẵn sàng."""
     if name in {"MODEL_DIR", "app", "health"}:
         from .app import MODEL_DIR, app, health
 
@@ -27,10 +19,6 @@ __all__ = [
     "health",
     "MODEL_DIR",
     "HealthResponse",
-    "ReadinessResponse",
     "InspectionResponse",
     "BatchInspectionResponse",
-    "ScoreBreakdown",
-    "LocalizationBreakdown",
-    "ModelBreakdown",
 ]

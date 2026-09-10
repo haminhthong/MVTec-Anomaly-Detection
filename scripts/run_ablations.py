@@ -68,7 +68,7 @@ def evaluate_dev_stress(detector: AnomalyDetector, dev_paths: list[Path]) -> dic
             normal = image.convert("RGB")
             normal_scores.append(detector.score(normal)[0])
             stress_scores.append(detector.score(_synthetic_stress(normal, index))[0])
-    threshold = detector.auto_pass_threshold
+    threshold = detector.image_threshold
     return {
         "dev_normal_false_alarm_rate": float(np.mean(np.asarray(normal_scores) >= threshold)) if normal_scores else 0.0,
         "synthetic_stress_sensitivity": float(np.mean(np.asarray(stress_scores) >= threshold)) if stress_scores else 0.0,
@@ -86,12 +86,10 @@ def _run_candidates(
     reference_manifest = validate_reference_category(data_dir=data_dir, category=category)
     rows: list[dict[str, object]] = []
     for label, overrides in candidates:
-        version = f"ablation-{filename.removesuffix('.csv')}-{label.replace('+', '-')}"
         candidate_overrides = dict(overrides)
         candidate_overrides.setdefault("coreset_size", 1000)
         cfg = TrainConfig(
             category=category,
-            model_version=version,
             **candidate_overrides,
         )
         artifact = train_patchcore(

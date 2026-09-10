@@ -1,8 +1,7 @@
-"""Module quản lý Memory Bank và runtime 1-NN index (Thiết kế B).
+"""Memory bank và chỉ mục 1-NN cho patch embeddings.
 
-Thay vì lưu trữ file nhị phân pickle (.joblib) dễ xung đột phiên bản scikit-learn,
-hệ thống lưu trữ mảng numpy thuần túy (memory_bank.npy). Khi khởi động runtime,
-chỉ mục NearestNeighbors (1-NN, L2 Euclidean) được dựng lại tức thì (~1-2 ms cho 1000 patches).
+Memory bank được lưu dưới dạng mảng NumPy; chỉ mục NearestNeighbors được dựng
+lại khi detector khởi động.
 """
 
 from __future__ import annotations
@@ -44,7 +43,7 @@ class MemoryBank:
 
     @property
     def features(self) -> np.ndarray:
-        """Alias for vectors array."""
+        """Trả về mảng vector trong memory bank."""
         return self.vectors
 
     def kneighbors(self, query_patches: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -76,7 +75,7 @@ class MemoryBank:
         """Tải memory bank từ tập tin numpy .npy và khởi tạo 1-NN index.
 
         Args:
-            file_path: Đường dẫn tới file memory_bank.npy (hoặc memory.npy tương thích ngược).
+            file_path: Đường dẫn tới file ``memory_bank.npy``.
 
         Raises:
             FileNotFoundError: Nếu file không tồn tại.

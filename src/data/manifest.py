@@ -1,6 +1,6 @@
 """Các hợp đồng manifest và fingerprint dữ liệu cho pipeline anomaly detection.
 
-Manifest normal và manifest locked-test được tách riêng để code xây model không
+Manifest normal và dữ liệu đánh giá được tách riêng để code xây model không
 có lý do kỹ thuật nào phải đọc ảnh test hoặc ground-truth mask.
 """
 
@@ -278,7 +278,7 @@ class LockedEvaluationManifest:
 
 @dataclass
 class DatasetManifest:
-    """Manifest ghép để tương thích CLI cũ; training không cần dùng phần test."""
+    """Manifest tổng hợp phục vụ lệnh kiểm tra đầy đủ một category."""
 
     category: str
     root_path: Path
@@ -347,10 +347,6 @@ class DatasetManifest:
                 items.append((path, 1, self.masks.get(str(path)), defect_type))
         return items
 
-    def get_all_test_paths(self) -> list[tuple[Path, int, Path | None]]:
-        """API cũ: trả về ảnh test, nhãn và mask."""
-        return [(path, label, mask) for path, label, mask, _ in self.get_all_test_items()]
-
     def to_dict(self) -> dict[str, Any]:
         """Serialize combined manifest."""
         return {
@@ -384,7 +380,7 @@ class DatasetManifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DatasetManifest":
-        """Deserialize combined manifest."""
+        """Khôi phục manifest tổng hợp từ JSON."""
         root = Path(data["root_path"])
         masks = {
             str(_restore_path(root, image_path)): _restore_path(root, mask_path)
@@ -409,14 +405,14 @@ class DatasetManifest:
         )
 
     def save(self, path: str | Path) -> None:
-        """Save manifest to JSON."""
+        """Ghi manifest tổng hợp ra JSON."""
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> "DatasetManifest":
-        """Load combined manifest from JSON."""
+        """Đọc manifest tổng hợp từ JSON."""
         target = Path(path)
         if not target.exists():
             raise FileNotFoundError(f"Không tìm thấy manifest: {target}")

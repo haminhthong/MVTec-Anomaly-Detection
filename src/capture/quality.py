@@ -40,7 +40,7 @@ def _blur_score(gray: np.ndarray) -> float:
 
 
 def validate_capture(image: Image.Image, contract: CaptureContract) -> CaptureQualityResult:
-    """Trả về RECAPTURE_REQUIRED nếu ảnh vi phạm capture contract."""
+    """Trả về RECAPTURE_REQUIRED nếu ảnh không đạt input check."""
     rgb = image.convert("RGB")
     width, height = rgb.size
     array = np.asarray(rgb, dtype=np.float32)
@@ -53,9 +53,7 @@ def validate_capture(image: Image.Image, contract: CaptureContract) -> CaptureQu
         reasons.append("unexpected_width")
     if contract.expected_height is not None and height != contract.expected_height:
         reasons.append("unexpected_height")
-    if contract.max_blur_score is not None and blur < contract.max_blur_score:
-        # Metric là sharpness energy; tên max_blur_score giữ theo contract API,
-        # nhưng giá trị cấu hình được hiểu là mức sharpness tối thiểu chấp nhận.
+    if contract.min_sharpness_score is not None and blur < contract.min_sharpness_score:
         reasons.append("blurred")
     if contract.min_exposure is not None and exposure < contract.min_exposure:
         reasons.append("under_exposed")
@@ -70,5 +68,10 @@ def validate_capture(image: Image.Image, contract: CaptureContract) -> CaptureQu
         valid=not reasons,
         state="CAPTURE_VALID" if not reasons else "RECAPTURE_REQUIRED",
         reasons=tuple(reasons),
-        metrics={"width": float(width), "height": float(height), "exposure": exposure, "blur_score": blur},
+        metrics={
+            "width": float(width),
+            "height": float(height),
+            "exposure": exposure,
+            "sharpness_score": blur,
+        },
     )

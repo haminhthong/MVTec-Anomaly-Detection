@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .calibration import calibrate_thresholds, split_normal_paths, split_reference_dev_calibration
+from .calibration import calibrate_thresholds, split_reference_dev_calibration
 
 
 def __getattr__(name: str):
@@ -16,7 +16,6 @@ def __getattr__(name: str):
 
 __all__ = [
     "calibrate_thresholds",
-    "split_normal_paths",
     "split_reference_dev_calibration",
     "train_patchcore",
     "set_seed",

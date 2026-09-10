@@ -1,4 +1,4 @@
-"""Chạy lifecycle locked evaluation cho nhiều category và gom benchmark CSV."""
+"""Chạy đánh giá cuối trên nhiều category và gom benchmark vào CSV."""
 
 from __future__ import annotations
 
@@ -53,18 +53,16 @@ def run_pipeline_for_category(
     data_dir: str | Path = "data/raw",
     models_dir: str | Path = "models",
     backbone: str = "resnet18",
-    model_version: str = "1.0.0",
     reopen: bool = False,
 ) -> dict[str, Any]:
-    """Chạy Reference -> Train -> Locked Evaluation cho một category."""
-    report_file = Path("reports") / category / "test_metrics.json"
+    """Chạy Reference -> Train -> Official Test cho một category."""
+    report_file = Path("reports") / category / "evaluation.json"
     metrics = run_end_to_end_pipeline(
         category=category,
         backbone=backbone,
         data_dir=data_dir,
         models_dir=models_dir,
         output_report=report_file,
-        model_version=model_version,
         reopen=reopen,
     )
     return metrics
@@ -90,12 +88,12 @@ def aggregate_benchmark_csv(
             "pixel_auroc": round(loc["pixel_auroc"], 4),
             "pixel_ap": round(loc["pixel_average_precision"], 4),
             "aupro_0.3": round(loc["aupro_0.3"], 4),
-            "auto_pass_threshold": round(op["auto_pass_threshold"], 4),
-            "normal_auto_pass_rate": round(op.get("normal_auto_pass_rate", 0.0), 4),
-            "normal_review_rate": round(op.get("normal_review_rate", 0.0), 4),
-            "defect_capture_to_review_rate": round(op.get("defect_capture_to_review_rate", 0.0), 4),
-            "review_rate": round(op.get("review_rate", 0.0), 4),
-            "defect_escape_rate": round(op.get("defect_escape_after_auto_pass", 0.0), 4),
+            "image_threshold": round(op["image_threshold"], 4),
+            "normal_pass_candidate_rate": round(op.get("normal_pass_candidate_rate", 0.0), 4),
+            "normal_review_required_rate": round(op.get("normal_review_required_rate", 0.0), 4),
+            "defect_review_required_rate": round(op.get("defect_review_required_rate", 0.0), 4),
+            "review_required_rate": round(op.get("review_required_rate", 0.0), 4),
+            "false_pass_candidate_rate": round(op.get("false_pass_candidate_rate", 0.0), 4),
             "status": "evaluated",
         })
 
@@ -118,12 +116,12 @@ def aggregate_benchmark_csv(
         "pixel_auroc": round(avg_pix_auroc, 4),
         "pixel_ap": round(avg_pix_ap, 4),
         "aupro_0.3": round(avg_aupro, 4),
-        "auto_pass_threshold": "-",
-        "normal_auto_pass_rate": round(sum(r["normal_auto_pass_rate"] for r in rows) / len(rows), 4),
-        "normal_review_rate": round(sum(r["normal_review_rate"] for r in rows) / len(rows), 4),
-        "defect_capture_to_review_rate": round(sum(r["defect_capture_to_review_rate"] for r in rows) / len(rows), 4),
-        "review_rate": round(sum(r["review_rate"] for r in rows) / len(rows), 4),
-        "defect_escape_rate": round(sum(r["defect_escape_rate"] for r in rows) / len(rows), 4),
+        "image_threshold": "-",
+        "normal_pass_candidate_rate": round(sum(r["normal_pass_candidate_rate"] for r in rows) / len(rows), 4),
+        "normal_review_required_rate": round(sum(r["normal_review_required_rate"] for r in rows) / len(rows), 4),
+        "defect_review_required_rate": round(sum(r["defect_review_required_rate"] for r in rows) / len(rows), 4),
+        "review_required_rate": round(sum(r["review_required_rate"] for r in rows) / len(rows), 4),
+        "false_pass_candidate_rate": round(sum(r["false_pass_candidate_rate"] for r in rows) / len(rows), 4),
         "status": "macro_average",
     }
     rows.append(mean_row)
@@ -135,11 +133,11 @@ def aggregate_benchmark_csv(
         writer.writerows(rows)
 
     print(f"\n[BENCHMARK] Saved aggregated metrics to '{out_path}'.")
-    print("category | samples | image_auroc | pixel_auroc | aupro@0.3 | defect_escape")
+    print("category | samples | image_auroc | pixel_auroc | aupro@0.3 | false_pass_candidate")
     for row in rows:
         print(
             f"{row['category']} | {row['test_samples']} | {row['image_auroc']} | "
-            f"{row['pixel_auroc']} | {row['aupro_0.3']} | {row['defect_escape_rate']}"
+            f"{row['pixel_auroc']} | {row['aupro_0.3']} | {row['false_pass_candidate_rate']}"
         )
 
 
@@ -150,7 +148,6 @@ def main():
     parser.add_argument("--models-dir", default="models", help="Path to models directory")
     parser.add_argument("--output-csv", default="reports/benchmark.csv", help="Output benchmark CSV path")
     parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
-    parser.add_argument("--model-version", default="1.0.0", help="Immutable release version")
     parser.add_argument("--reopen-locked-test", action="store_true", help="Cho phép ghi lại report đã tồn tại")
     args = parser.parse_args()
 
@@ -173,7 +170,6 @@ def main():
                 data_dir=args.data_dir,
                 models_dir=args.models_dir,
                 backbone=args.backbone,
-                model_version=args.model_version,
                 reopen=args.reopen_locked_test,
             )
             all_metrics.append(m)

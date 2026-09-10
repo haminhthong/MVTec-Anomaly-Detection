@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .aupro import compute_aupro
-from .metrics import calculate_3tier_metrics
+from .metrics import calculate_workflow_metrics
 
 
 def __getattr__(name: str):
@@ -17,6 +17,6 @@ def __getattr__(name: str):
 
 __all__ = [
     "compute_aupro",
-    "calculate_3tier_metrics",
+    "calculate_workflow_metrics",
     "evaluate_category",
 ]

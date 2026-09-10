@@ -1,4 +1,4 @@
-"""Điểm vào CLI cho pipeline đánh giá locked test dạng report-only."""
+"""Điểm vào CLI để đánh giá official test dưới dạng report-only."""
 
 from __future__ import annotations
 
@@ -13,30 +13,30 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def main() -> None:
     """Điểm vào của lệnh ``python -m src.evaluate``."""
-    parser = argparse.ArgumentParser(description="Evaluate PatchCore-style model on test split (REPORT-ONLY)")
+    parser = argparse.ArgumentParser(description="Đánh giá model PatchCore-style trên official test (REPORT-ONLY)")
     parser.add_argument(
         "--category",
         type=str,
         default="bottle",
-        help="Category name to evaluate",
+        help="Tên category cần đánh giá",
     )
     parser.add_argument(
         "--model-dir",
         type=str,
         default="models",
-        help="Path to models directory",
+        help="Thư mục chứa model category",
     )
     parser.add_argument(
         "--data-dir",
         type=str,
         default="data/raw",
-        help="Path to raw datasets directory",
+        help="Thư mục dữ liệu raw",
     )
     parser.add_argument(
         "--output-report",
         type=str,
         default=None,
-        help="Path to output JSON report",
+        help="Đường dẫn report JSON đầu ra",
     )
     parser.add_argument(
         "--reopen-locked-test",

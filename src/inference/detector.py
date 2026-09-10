@@ -1,8 +1,7 @@
-"""Detector runtime: quality gate -> anomaly score -> AUTO_PASS/HUMAN_REVIEW."""
+"""Runtime detector: input check -> 1-NN score -> heatmap -> triage."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 import uuid
@@ -14,45 +13,39 @@ import torch
 from ..capture.contract import CaptureContract
 from ..capture.quality import validate_capture
 from ..data.transforms import PreprocessingConfig, build_transform
-from ..model.artifact_resolver import resolve_artifact_dir
-from ..model.artifacts import ModelArtifact, ThresholdPolicy, verify_artifact_integrity
+from ..model.artifacts import ModelArtifact
 from ..model.feature_extractor import FeatureExtractor
 from ..model.memory_bank import MemoryBank
+from ..path_safety import ensure_safe_segment
 from .decision import OperationalPolicy, classify_decision
-from .localization import apply_heatmap_smoothing, compute_anomalous_area_ratio, create_heatmap_overlay_b64
+from .localization import (
+    apply_heatmap_smoothing,
+    compute_anomalous_area_ratio,
+    create_heatmap_overlay_b64,
+)
 from .scoring import compute_image_score
 
 
 class AnomalyDetector:
-    """Detector gắn với đúng một category/release immutable."""
+    """Detector gắn với đúng một thư mục model category."""
 
-    def __init__(self, model_dir: str | Path = "models", category: str | None = None) -> None:
-        target_dir = resolve_artifact_dir(model_root=model_dir, category=category)
+    def __init__(self, model_dir: str | Path = "models/bottle", category: str | None = None) -> None:
+        target_dir = Path(model_dir)
+        if category is not None:
+            category = ensure_safe_segment(category.strip(), "category")
+            if not (target_dir / "metadata.json").exists():
+                target_dir = target_dir / category
         self.model_dir = target_dir
-        config_file = target_dir / "config.json"
-        raw_config: dict[str, Any] = json.loads(config_file.read_text(encoding="utf-8"))
-        self.artifact = ModelArtifact.from_dict(raw_config)
-        # Release do trainer tạo luôn có release_id/reference_manifest và bắt
-        # buộc phải có manifest SHA256. Artifact tối giản dùng trong unit test
-        # không có provenance release nên vẫn được nạp như fixture hợp lệ.
-        is_production_release = bool(
-            self.artifact.metadata.release_id or self.artifact.reference_manifest
-        )
-        verify_artifact_integrity(
-            target_dir,
-            strict=self.artifact.metadata.artifact_schema_version >= 5 and is_production_release,
-        )
+        self.artifact = ModelArtifact.load(target_dir)
         self.category = self.artifact.metadata.category
         if category is not None and self.category != category:
             raise ValueError(f"Artifact category '{self.category}' không khớp '{category}'.")
-        self.threshold_policy: ThresholdPolicy = self.artifact.threshold_policy
-        self.operational_policy = OperationalPolicy.from_threshold_policy(self.threshold_policy)
+
+        self.thresholds = self.artifact.thresholds
+        self.operational_policy = OperationalPolicy.from_thresholds(self.thresholds)
         self.capture_contract = CaptureContract.from_dict(self.artifact.capture_contract)
 
         memory_file = target_dir / "memory_bank.npy"
-        if not memory_file.exists():
-            legacy_file = target_dir / "memory.npy"
-            memory_file = legacy_file if legacy_file.exists() else memory_file
         if not memory_file.exists():
             raise FileNotFoundError(f"Thiếu memory_bank.npy trong '{target_dir}'.")
         self.memory_bank = MemoryBank.load(memory_file)
@@ -69,42 +62,31 @@ class AnomalyDetector:
 
         self.preprocessing_config: PreprocessingConfig = self.artifact.preprocessing
         self.transform = build_transform(self.preprocessing_config)
-        self.dev = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.net = FeatureExtractor(
             backbone=self.artifact.metadata.backbone,
             layers=self.artifact.metadata.feature_layers,
             pretrained=self.artifact.metadata.pretrained,
             weights=self.artifact.metadata.weights,
-        ).to(self.dev)
+        ).to(self.device)
         self.smooth_sigma = self.artifact.smooth_sigma
         self.scoring_percentile = float(self.artifact.scoring.get("percentile", 99.0))
         self.model_version = self.artifact.metadata.model_version
-        self.release_id = self.artifact.metadata.release_id or target_dir.name
 
     @property
-    def threshold(self) -> float:
-        """Alias cũ cho auto-pass threshold."""
-        return self.threshold_policy.auto_pass_threshold
-
-    @property
-    def auto_pass_threshold(self) -> float:
-        """Ngưỡng ảnh được AUTO_PASS."""
-        return self.threshold_policy.auto_pass_threshold
-
-    @property
-    def review_threshold(self) -> float:
-        """Alias cũ; V1 không có vùng review thứ hai."""
-        return self.threshold_policy.auto_pass_threshold
+    def image_threshold(self) -> float:
+        """Ngưỡng image score được calibration từ normal holdout."""
+        return self.thresholds.image_threshold
 
     @property
     def pixel_threshold(self) -> float:
-        """Ngưỡng pixel calibration normal."""
-        return self.threshold_policy.pixel_threshold
+        """Ngưỡng pixel score dùng cho localization overlay."""
+        return self.thresholds.pixel_threshold
 
     @torch.inference_mode()
     def score(self, image: Image.Image) -> tuple[float, np.ndarray]:
-        """Tính image anomaly score và heatmap đã smoothing."""
-        tensor = self.transform(image.convert("RGB")).unsqueeze(0).to(self.dev)
+        """Tính image anomaly score và heatmap đã Gaussian smoothing."""
+        tensor = self.transform(image.convert("RGB")).unsqueeze(0).to(self.device)
         patches, (height, width) = self.net.extract_spatial_features(tensor)
         distances, _ = self.memory_bank.kneighbors(patches.cpu().numpy())
         heatmap = distances.reshape(height, width)
@@ -121,42 +103,25 @@ class AnomalyDetector:
         overlay_b64: str | None = None,
         area_ratio: float = 0.0,
         peak_score: float = 0.0,
-        line_id: str | None = None,
         camera_id: str | None = None,
         timestamp: str | None = None,
     ) -> dict[str, Any]:
-        """Tạo response nhất quán cho cả capture-invalid và model decision."""
+        """Tạo response phẳng chỉ chứa thông tin cần cho inspection."""
         return {
             "inspection_id": inspection_id,
             "category": self.category,
             "decision": decision,
-            "severity": None,
-            "scores": {
-                "anomaly_score": round(score, 4) if score is not None else None,
-                "auto_pass_threshold": round(self.auto_pass_threshold, 4),
-                "review_threshold": round(self.auto_pass_threshold, 4),
-                "fail_threshold": round(self.auto_pass_threshold, 4),
-            },
-            "localization": {
-                "anomalous_area_ratio": round(area_ratio, 4),
-                "peak_anomaly_score": round(peak_score, 4),
-                "peak_score": round(peak_score, 4),
-                "pixel_threshold": round(self.pixel_threshold, 4),
-            },
+            "anomaly_score": round(score, 4) if score is not None else None,
+            "image_threshold": round(self.image_threshold, 4),
+            "anomalous_area_ratio": round(area_ratio, 4),
+            "peak_anomaly_score": round(peak_score, 4),
+            "pixel_threshold": round(self.pixel_threshold, 4),
             "capture_quality": quality,
-            "model": {
-                "version": self.model_version,
-                "category": self.category,
-                "release_id": self.release_id,
-            },
-            "line_id": line_id,
+            "model_version": self.model_version,
             "camera_id": camera_id,
             "timestamp": timestamp,
             "overlay_b64": overlay_b64,
-            "anomaly_score": score,
-            "threshold": self.auto_pass_threshold,
             "heatmap_shape": heatmap_shape,
-            "model_version": self.model_version,
         }
 
     @torch.inference_mode()
@@ -164,11 +129,10 @@ class AnomalyDetector:
         self,
         image: Image.Image,
         include_overlay: bool = True,
-        line_id: str | None = None,
         camera_id: str | None = None,
         timestamp: str | None = None,
     ) -> dict[str, Any]:
-        """Quality gate trước, sau đó mới chạy detector."""
+        """Input check trước, sau đó mới chạy anomaly detector."""
         inspection_id = f"insp_{uuid.uuid4().hex[:12]}"
         quality = validate_capture(image, self.capture_contract)
         if not quality.valid:
@@ -176,7 +140,6 @@ class AnomalyDetector:
                 inspection_id,
                 "RECAPTURE_REQUIRED",
                 quality.to_dict(),
-                line_id=line_id,
                 camera_id=camera_id,
                 timestamp=timestamp,
             )
@@ -205,7 +168,6 @@ class AnomalyDetector:
             overlay_b64=overlay,
             area_ratio=area_ratio,
             peak_score=peak_score,
-            line_id=line_id,
             camera_id=camera_id,
             timestamp=timestamp,
         )
@@ -215,11 +177,10 @@ class AnomalyDetector:
         self,
         images: list[Image.Image],
         include_overlay: bool = False,
-        line_id: str | None = None,
         camera_id: str | None = None,
         timestamp: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Inspect batch; ảnh capture-invalid được trả về riêng và không score."""
+        """Score batch hợp lệ và ghép kết quả theo đúng thứ tự input."""
         if not images:
             return []
         results: list[dict[str, Any] | None] = [None] * len(images)
@@ -233,7 +194,6 @@ class AnomalyDetector:
                     f"insp_{uuid.uuid4().hex[:12]}",
                     "RECAPTURE_REQUIRED",
                     quality.to_dict(),
-                    line_id=line_id,
                     camera_id=camera_id,
                     timestamp=timestamp,
                 )
@@ -243,12 +203,19 @@ class AnomalyDetector:
                 valid_quality.append(quality.to_dict())
 
         if valid_images:
-            tensors = torch.stack([self.transform(image.convert("RGB")) for image in valid_images]).to(self.dev)
+            tensors = torch.stack(
+                [self.transform(image.convert("RGB")) for image in valid_images]
+            ).to(self.device)
             all_patches, (height, width) = self.net.extract_spatial_features(tensors)
             distances, _ = self.memory_bank.kneighbors(all_patches.cpu().numpy())
+            patches_per_image = height * width
             for local_index, original_index in enumerate(valid_indices):
-                heatmap = distances[local_index * height * width : (local_index + 1) * height * width]
-                heatmap = apply_heatmap_smoothing(heatmap.reshape(height, width), sigma=self.smooth_sigma)
+                start = local_index * patches_per_image
+                stop = start + patches_per_image
+                heatmap = apply_heatmap_smoothing(
+                    distances[start:stop].reshape(height, width),
+                    sigma=self.smooth_sigma,
+                )
                 score = compute_image_score(heatmap, percentile=self.scoring_percentile)
                 peak_score = float(np.max(heatmap))
                 area_ratio = compute_anomalous_area_ratio(heatmap, self.pixel_threshold)
@@ -272,7 +239,6 @@ class AnomalyDetector:
                     overlay_b64=overlay,
                     area_ratio=area_ratio,
                     peak_score=peak_score,
-                    line_id=line_id,
                     camera_id=camera_id,
                     timestamp=timestamp,
                 )

@@ -43,7 +43,7 @@ def benchmark_category(
     print("=" * 70)
 
     detector = AnomalyDetector(model_dir=model_dir, category=category)
-    device = detector.dev
+    device = detector.device
     image_size = list(detector.preprocessing_config.image_size)
     cpu_name = platform.processor() or platform.machine() or "unknown"
     root = find_category_root(category=category)

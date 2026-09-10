@@ -39,23 +39,23 @@ def test_train_artifact_generation(tmp_path: Path) -> None:
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        review_quantile=0.90,
-        threshold_quantile=0.98,
+        image_quantile=0.98,
         pixel_quantile=0.98,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
 
     artifact = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
 
     cat_dir = models_dir / category
-    assert (cat_dir / "config.json").exists()
+    assert (cat_dir / "metadata.json").exists()
     assert (cat_dir / "memory_bank.npy").exists()
-    assert (cat_dir / "split_manifest.json").exists()
+    report_dir = tmp_path / "reports" / category
+    assert (report_dir / "training_split.json").exists()
 
     # Verify split manifest
-    split = SplitManifest.load(cat_dir / "split_manifest.json")
+    split = SplitManifest.from_dict(
+        json.loads((report_dir / "training_split.json").read_text(encoding="utf-8"))
+    )
     assert split.memory_count + split.dev_count + split.calibration_count == 25
     assert len(split.memory_files) == split.memory_count
     assert len(split.dev_files) == split.dev_count
@@ -70,4 +70,4 @@ def test_train_artifact_generation(tmp_path: Path) -> None:
     # Verify loaded artifact
     loaded_art = ModelArtifact.load(cat_dir)
     assert loaded_art.metadata.category == category
-    assert loaded_art.threshold_policy.review_threshold <= loaded_art.threshold_policy.fail_threshold
+    assert loaded_art.thresholds.image_threshold > 0

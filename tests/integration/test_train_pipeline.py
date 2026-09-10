@@ -36,22 +36,19 @@ def test_train_pipeline_end_to_end(tmp_path: Path) -> None:
         category=category,
         batch_size=4,
         min_calibration_samples=5,
-        review_quantile=0.90,
-        threshold_quantile=0.98,
+        image_quantile=0.98,
         pixel_quantile=0.98,
-        coreset_fraction=0.1,
-        min_coreset_size=5,
-        max_coreset_size=20,
+        coreset_size=20,
     )
 
     artifact = train_patchcore(config=cfg, models_dir=models_dir, data_dir=raw_dir)
     assert artifact.metadata.category == category
-    assert artifact.threshold_policy.review_threshold <= artifact.threshold_policy.fail_threshold
+    assert artifact.thresholds.image_threshold > 0
 
     cat_dir = models_dir / category
     assert (cat_dir / "memory_bank.npy").exists()
-    assert (cat_dir / "config.json").exists()
-    assert (cat_dir / "split_manifest.json").exists()
+    assert (cat_dir / "metadata.json").exists()
+    assert (tmp_path / "reports" / category / "training_split.json").exists()
 
     loaded_mem = np.load(cat_dir / "memory_bank.npy")
     assert loaded_mem.ndim == 2
