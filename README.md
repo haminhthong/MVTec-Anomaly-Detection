@@ -18,7 +18,6 @@ MVTec AD cung cấp ảnh normal cho training, vì vậy one-class anomaly detec
 - Training chỉ đọc `train/good`; test và ground truth chỉ được đọc ở bước evaluation cuối.
 - Tập normal được tách thành Reference, Dev và Calibration.
 - Runtime decision chỉ có `PASS_CANDIDATE`, `REVIEW_REQUIRED` và `RECAPTURE_REQUIRED`.
-- Human QC có thể lưu `QC_PASS` hoặc `QC_REJECT` trong SQLite tùy chọn.
 - Không tự động thêm ảnh production vào memory bank; cập nhật reference phải là bước offline có kiểm soát.
 
 ## Luồng logic, data và pipeline
@@ -66,7 +65,7 @@ Kết quả dưới đây là benchmark đã lưu cho category `bottle`; không 
 | Test images | 83 (20 normal, 63 defect) |
 | CPU latency | 145.7 ms/image* |
 
-\* Latency là số đo lịch sử; hardware/thread provenance chưa đủ để coi là benchmark production. Chạy `scripts/benchmark_inference.py` để ghi lại CPU, PyTorch, thread count, P50/P95, throughput, RAM và kích thước memory bank.
+\* Latency là số đo lịch sử; hardware/thread provenance chưa đủ để coi là benchmark production. Chạy `scripts/benchmark_inference.py` để ghi lại CPU, nền tảng, PyTorch, thread count, P50/P95, throughput, RAM và kích thước memory bank.
 
 ## PatchCore-style là gì?
 
@@ -214,7 +213,11 @@ python scripts/run_ablations.py --category bottle --experiment all
 Benchmark latency:
 
 ```bash
-python scripts/benchmark_inference.py --category bottle --model-dir models
+python scripts/benchmark_inference.py \
+  --category bottle \
+  --model-dir models \
+  --runs 50 \
+  --output reports/bottle/benchmark_runtime.json
 ```
 
 ## FastAPI demo
@@ -227,9 +230,13 @@ uvicorn src.api:app --host 0.0.0.0 --port 8000
 
 Các endpoint:
 
-- `GET /health`: process và category có đủ `metadata.json` + `memory_bank.npy`.
+- `GET /live`: kiểm tra process; trả `200` khi API đang chạy.
+- `GET /ready`: trả `200` khi có ít nhất một model hợp lệ, hoặc `503` nếu chưa mount artifact.
+- `GET /health`: alias tương thích của `/ready`, không xuất hiện trong OpenAPI.
 - `POST /inspect?category=bottle`: một ảnh, field upload là `file`.
 - `POST /inspect/batch?category=bottle`: nhiều ảnh, field upload là `files`.
+
+Detector được cache theo category sau request đầu tiên để không khởi tạo lại ResNet18 và memory bank ở mỗi request.
 
 Ví dụ:
 
@@ -262,7 +269,7 @@ Response runtime có contract phẳng:
 }
 ```
 
-Input check có thể trả `RECAPTURE_REQUIRED` cho ảnh sai kích thước, blur, exposure hoặc ROI nếu các rule tương ứng được cấu hình. Tách quality khỏi anomaly giúp blur hoặc framing sai không bị diễn giải thành lỗi sản phẩm.
+Input check có thể trả `RECAPTURE_REQUIRED` cho ảnh sai kích thước, blur, exposure hoặc ROI configuration nếu các rule tương ứng được cấu hình. Tách quality khỏi anomaly giúp ảnh mờ, phơi sáng sai hoặc ROI cấu hình không hợp lệ không bị diễn giải thành lỗi sản phẩm.
 
 ## Cấu trúc dự án
 
@@ -275,12 +282,9 @@ Mvtec-Anomaly-Detection/
 │   ├── evaluation/           # AUROC, AP, Pixel metrics, AUPRO
 │   ├── inference/            # Detector, scoring, heatmap, decision
 │   ├── model/                # Backbone, patch, coreset, memory bank, artifact
-│   ├── storage/              # SQLite inspection/review tùy chọn
 │   ├── training/             # Split, calibration, trainer
 │   ├── config.py
-│   ├── pipeline.py
-│   ├── train.py
-│   └── evaluate.py
+│   └── pipeline.py           # CLI duy nhất cho data/train/evaluate/run
 ├── models/<category>/
 │   ├── memory_bank.npy
 │   └── metadata.json
@@ -295,14 +299,34 @@ Mvtec-Anomaly-Detection/
 
 ## Docker
 
-Build và chạy API với artifact model đã có:
+Docker image chỉ phục vụ inference. Model được train offline và phải được mount read-only; container không tải dataset hoặc train khi khởi động.
+
+Artifact tối thiểu cần có trước khi chạy:
+
+```
+models/bottle/
+├── memory_bank.npy
+└── metadata.json
+```
+
+Build và chạy API:
 
 ```bash
 docker build -t mvtec-anomaly .
-docker run --rm -p 8000:8000 mvtec-anomaly
+docker run --rm \
+  -p 8000:8000 \
+  -v "$(pwd)/models:/app/models:ro" \
+  mvtec-anomaly
 ```
 
-Docker image không tải dataset và không train model trong lúc khởi động.
+Kiểm tra container:
+
+```bash
+curl -f http://localhost:8000/live
+curl -f http://localhost:8000/ready
+```
+
+Trong PowerShell, có thể thay `$(pwd)/models` bằng `${PWD}/models`.
 
 ## Kiểm thử và CI
 
@@ -322,7 +346,7 @@ GitHub Actions chạy Python 3.11, CPU PyTorch/Torchvision, compile source, `pip
 - Anomaly score cho biết mức khác biệt với normal distribution, không xác định nguyên nhân hoặc severity defect.
 - P99 calibration là heuristic normal upper-tail; không phải guarantee cho dữ liệu production.
 - Latency phụ thuộc hardware, image size, thread count và memory bank.
-- Feedback QC chỉ được lưu; không tự retrain hoặc tự cập nhật memory bank.
+- Kết quả QC không được tự động dùng để retrain hoặc cập nhật memory bank.
 - FastAPI là demo serving, chưa phải hệ thống triển khai tại nhà máy.
 
 ## Tài liệu liên quan

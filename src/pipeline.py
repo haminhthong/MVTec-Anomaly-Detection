@@ -1,9 +1,9 @@
 """Điều phối các pipeline của hệ thống MVTec AD.
 
-Unifies the 4 canonical pipelines:
+Điều phối 4 pipeline chính:
 1. DATA: kiểm tra dataset và tạo manifest
 2. MODEL BUILDING: feature frozen, coreset, calibration và lưu artifact
-    3. EVALUATION: official test chỉ ghi report
+3. EVALUATION: official test chỉ ghi report
 4. SERVING: suy luận inspection và REST API
 """
 
@@ -40,7 +40,7 @@ def run_data_pipeline(
     save_manifest: bool = True,
 ) -> DatasetManifest:
     """Kiểm tra đầy đủ category và tạo manifest cho lệnh data."""
-    print(f"\n[PIPELINE 1/4: DATA] Validating dataset for category '{category}'...")
+    print(f"\n[PIPELINE 1/4: DATA] Kiểm tra dataset cho category '{category}'...")
     manifest = validate_mvtec_category(
         data_dir=data_dir, category=category, check_image_integrity=check_integrity
     )
@@ -48,14 +48,14 @@ def run_data_pipeline(
         processed_dir = Path("data/processed") / category
         manifest_path = processed_dir / "manifest.json"
         manifest.save(manifest_path)
-        print(f"  [SAVED] Manifest written to '{manifest_path}'")
+        print(f"  [ĐÃ LƯU] Manifest tại '{manifest_path}'")
     print(
-        f"  [OK] Manifest validated: {manifest.total_train} train images, "
-        f"{manifest.total_test} test images ({manifest.total_test_good} good, "
-        f"{manifest.total_test_defect} defects across {len(manifest.defect_types)} types)."
+        f"  [OK] Manifest hợp lệ: {manifest.total_train} ảnh train, "
+        f"{manifest.total_test} ảnh test ({manifest.total_test_good} good, "
+        f"{manifest.total_test_defect} defect thuộc {len(manifest.defect_types)} loại)."
     )
     if manifest.fingerprint:
-        print(f"  [OK] Dataset Fingerprint: {manifest.fingerprint[:16]}...")
+        print(f"  [OK] Fingerprint dataset: {manifest.fingerprint[:16]}...")
     return manifest
 
 
@@ -67,10 +67,18 @@ def run_training_pipeline(
 ) -> ModelArtifact:
     """Xây model category từ reference normal và calibration held-out."""
     cfg = config or TrainConfig()
-    print(f"\n[PIPELINE 2/4: MODEL BUILDING] Building artifact for '{cfg.category}' (backbone: {cfg.backbone})...")
-    artifact = train_patchcore(manifest=manifest, config=cfg, models_dir=models_dir, data_dir=data_dir)
     print(
-        f"  [OK] Model built for '{cfg.category}': "
+        f"\n[PIPELINE 2/4: MODEL BUILDING] Xây artifact cho '{cfg.category}' "
+        f"(backbone: {cfg.backbone})..."
+    )
+    artifact = train_patchcore(
+        manifest=manifest,
+        config=cfg,
+        models_dir=models_dir,
+        data_dir=data_dir,
+    )
+    print(
+        f"  [OK] Đã xây model cho '{cfg.category}': "
         f"Memory bank size={artifact.coreset_info['size']}, "
         f"image threshold={artifact.thresholds.image_threshold:.4f}."
     )
@@ -88,7 +96,10 @@ def run_evaluation_pipeline(
 ) -> dict[str, Any]:
     """Đánh giá official test, không chỉnh lại policy đã calibration."""
     target_cat = manifest.category if manifest else category
-    print(f"\n[PIPELINE 3/4: EVALUATION] Evaluating category '{target_cat}' (REPORT-ONLY)...")
+    print(
+        f"\n[PIPELINE 3/4: EVALUATION] Đánh giá category '{target_cat}' "
+        "(chỉ ghi report)..."
+    )
     metrics = evaluate_category(
         category=target_cat,
         manifest=manifest,
@@ -107,9 +118,10 @@ def run_serving_pipeline(
     model_dir: str | Path = "models",
 ) -> dict[str, Any]:
     """Kiểm tra chất lượng rồi chạy anomaly inspection trên một ảnh."""
-    detector = AnomalyDetector(model_dir=model_dir, category=category)
     if image is None:
-        raise ValueError("Must provide an image (PIL Image or file path) for inspection.")
+        raise ValueError("Phải cung cấp ảnh PIL hoặc đường dẫn ảnh để inspection.")
+
+    detector = AnomalyDetector(model_dir=model_dir, category=category)
 
     if isinstance(image, (str, Path)):
         with Image.open(image) as im:
@@ -126,7 +138,11 @@ def run_end_to_end_pipeline(
     overwrite: bool = False,
 ) -> dict[str, Any]:
     """Chạy Reference -> Training -> Official Evaluation theo đúng boundary."""
-    print(f"\n{'='*70}\n [MASTER PIPELINE] Executing end-to-end lifecycle for '{category.upper()}'\n{'='*70}")
+    print(
+        f"\n{'=' * 70}\n"
+        f" [MASTER PIPELINE] Chạy toàn bộ lifecycle cho '{category.upper()}'\n"
+        f"{'=' * 70}"
+    )
     # Tách hai ranh giới: reference được lấy trước; official test chỉ lấy sau train.
     reference_manifest = validate_reference_category(data_dir=data_dir, category=category)
 
@@ -146,50 +162,50 @@ def run_end_to_end_pipeline(
         category=category,
         model_dir=models_dir,
         output_report=output_report,
-            overwrite=overwrite,
+        overwrite=overwrite,
     )
-    print(f"\n[MASTER PIPELINE] Finished end-to-end execution for '{category}'.")
+    print(f"\n[MASTER PIPELINE] Đã hoàn tất lifecycle cho '{category}'.")
     return metrics
 
 
 def main() -> None:
     """CLI điều phối từng pipeline hoặc toàn bộ lifecycle."""
-    parser = argparse.ArgumentParser(description="MVTec AD Anomaly Detection Pipeline Orchestrator")
-    subparsers = parser.add_subparsers(dest="command", help="Pipeline to run")
+    parser = argparse.ArgumentParser(description="Điều phối pipeline anomaly detection trên MVTec AD")
+    subparsers = parser.add_subparsers(dest="command", help="Pipeline cần chạy")
 
     # run: chạy toàn bộ lifecycle.
-    run_parser = subparsers.add_parser("run", help="Run end-to-end pipeline: data -> train -> evaluate")
-    run_parser.add_argument("--category", default="bottle", help="Category name")
-    run_parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
-    run_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
-    run_parser.add_argument("--models-dir", default="models", help="Models directory")
-    run_parser.add_argument("--output-report", default=None, help="Report file path")
+    run_parser = subparsers.add_parser("run", help="Chạy data -> train -> evaluate")
+    run_parser.add_argument("--category", default="bottle", help="Tên category")
+    run_parser.add_argument("--backbone", default="resnet18", help="Kiến trúc backbone CNN")
+    run_parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
+    run_parser.add_argument("--models-dir", default="models", help="Thư mục lưu model")
+    run_parser.add_argument("--output-report", default=None, help="Đường dẫn report đầu ra")
     run_parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # data: kiểm tra dữ liệu.
-    data_parser = subparsers.add_parser("data", help="Validate data and generate manifest")
-    data_parser.add_argument("--category", default="bottle", help="Category name")
-    data_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
+    data_parser = subparsers.add_parser("data", help="Kiểm tra dữ liệu và tạo manifest")
+    data_parser.add_argument("--category", default="bottle", help="Tên category")
+    data_parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
 
     # train: xây model category.
-    train_parser = subparsers.add_parser("train", help="Build model and calibrate threshold policy")
-    train_parser.add_argument("--category", default="bottle", help="Category name")
-    train_parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
-    train_parser.add_argument("--models-dir", default="models", help="Models directory")
-    train_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
+    train_parser = subparsers.add_parser("train", help="Xây model và calibration threshold")
+    train_parser.add_argument("--category", default="bottle", help="Tên category")
+    train_parser.add_argument("--backbone", default="resnet18", help="Kiến trúc backbone CNN")
+    train_parser.add_argument("--models-dir", default="models", help="Thư mục lưu model")
+    train_parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
 
     # evaluate: đọc official test và chỉ ghi report.
     eval_parser = subparsers.add_parser("evaluate", help="Đánh giá official test, chỉ ghi report")
-    eval_parser.add_argument("--category", default="bottle", help="Category name")
-    eval_parser.add_argument("--models-dir", default="models", help="Models directory")
-    eval_parser.add_argument("--data-dir", default="data/raw", help="Raw data directory")
-    eval_parser.add_argument("--output-report", default=None, help="Report file path")
+    eval_parser.add_argument("--category", default="bottle", help="Tên category")
+    eval_parser.add_argument("--models-dir", default="models", help="Thư mục model")
+    eval_parser.add_argument("--data-dir", default="data/raw", help="Thư mục dữ liệu raw")
+    eval_parser.add_argument("--output-report", default=None, help="Đường dẫn report đầu ra")
     eval_parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
 
     # serve: khởi động API.
-    serve_parser = subparsers.add_parser("serve", help="Launch FastAPI REST server")
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Host binding")
-    serve_parser.add_argument("--port", type=int, default=8000, help="Port binding")
+    serve_parser = subparsers.add_parser("serve", help="Khởi động FastAPI REST server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Địa chỉ bind")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Cổng bind")
 
     args = parser.parse_args()
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass, field
 
 from .data.transforms import PreprocessingConfig
@@ -98,101 +97,3 @@ class TrainConfig:
         if self.coreset_size is not None:
             return min(self.coreset_size, full_memory_size)
         return min(1000, full_memory_size)
-
-
-def parse_args() -> TrainConfig:
-    """Đọc tham số dòng lệnh CLI và trả về cấu hình TrainConfig đã kiểm tra hợp lệ."""
-    parser = argparse.ArgumentParser(
-        description="Huấn luyện mô hình phát hiện lỗi ngoại quan PatchCore-style cho MVTec AD"
-    )
-    parser.add_argument(
-        "--category",
-        type=str,
-        default=DEFAULT_CATEGORY,
-        help="Tên danh mục sản phẩm trong MVTec AD",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=DEFAULT_SEED, help="Giá trị seed ngẫu nhiên"
-    )
-    parser.add_argument(
-        "--backbone",
-        type=str,
-        default=DEFAULT_BACKBONE,
-        help="Kiến trúc mạng backbone (mặc định: resnet18)",
-    )
-    parser.add_argument(
-        "--weights",
-        type=str,
-        default=None,
-        help="Torchvision weights enum identifier (e.g. ResNet18_Weights.IMAGENET1K_V1)",
-    )
-    parser.add_argument(
-        "--feature-layers",
-        nargs="+",
-        default=list(DEFAULT_FEATURE_LAYERS),
-        help="Danh sách các layer trích xuất đặc trưng",
-    )
-    parser.add_argument(
-        "--pretrained",
-        action="store_true",
-        default=True,
-        help="Sử dụng pretrained weights ImageNet",
-    )
-    parser.add_argument(
-        "--no-pretrained",
-        action="store_false",
-        dest="pretrained",
-        help="Không sử dụng pretrained weights (weights ngẫu nhiên)",
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=8, help="Kích thước batch cho DataLoader"
-    )
-    parser.add_argument("--dev-fraction", type=float, default=0.15, help="Tỷ lệ normal dành cho Dev")
-    parser.add_argument("--calibration-fraction", type=float, default=0.15, help="Tỷ lệ normal dành cho calibration")
-    parser.add_argument("--image-quantile", type=float, default=0.99, help="Quantile normal cho image threshold")
-    parser.add_argument(
-        "--pixel-quantile",
-        type=float,
-        default=0.99,
-        help="Phân vị pixel heatmap normal dùng làm pixel_threshold",
-    )
-    parser.add_argument(
-        "--min-calibration-samples",
-        type=int,
-        default=20,
-        help="Số lượng ảnh calibration tối thiểu yêu cầu",
-    )
-    parser.add_argument("--coreset-size", type=int, default=None, help="Số patch giữ lại trong memory bank")
-    parser.add_argument(
-        "--smooth-sigma",
-        type=float,
-        default=1.0,
-        help="Độ mịn Gaussian smoothing cho anomaly map",
-    )
-    parser.add_argument(
-        "--scoring-percentile",
-        type=float,
-        default=99.0,
-        help="Phân vị tính anomaly score từ anomaly heatmap (mặc định: 99.0)",
-    )
-
-    args = parser.parse_args()
-    config = TrainConfig(
-        category=args.category,
-        seed=args.seed,
-        backbone=args.backbone,
-        weights=args.weights,
-        feature_layers=tuple(args.feature_layers),
-        pretrained=args.pretrained,
-        batch_size=args.batch_size,
-        dev_fraction=args.dev_fraction,
-        calibration_fraction=args.calibration_fraction,
-        image_quantile=args.image_quantile,
-        pixel_quantile=args.pixel_quantile,
-        min_calibration_samples=args.min_calibration_samples,
-        coreset_size=args.coreset_size,
-        smooth_sigma=args.smooth_sigma,
-        scoring_percentile=args.scoring_percentile,
-    )
-    config.validate()
-    return config

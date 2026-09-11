@@ -7,16 +7,24 @@ from .schemas import BatchInspectionResponse, HealthResponse, InspectionResponse
 
 def __getattr__(name: str):
     """Nạp app sau khi schema đã sẵn sàng."""
-    if name in {"MODEL_DIR", "app", "health"}:
-        from .app import MODEL_DIR, app, health
+    if name in {"MODEL_DIR", "app", "health", "live", "ready"}:
+        from .app import MODEL_DIR, app, health, live, ready
 
-        return {"MODEL_DIR": MODEL_DIR, "app": app, "health": health}[name]
+        return {
+            "MODEL_DIR": MODEL_DIR,
+            "app": app,
+            "health": health,
+            "live": live,
+            "ready": ready,
+        }[name]
     raise AttributeError(name)
 
 
 __all__ = [
     "app",
     "health",
+    "live",
+    "ready",
     "MODEL_DIR",
     "HealthResponse",
     "InspectionResponse",

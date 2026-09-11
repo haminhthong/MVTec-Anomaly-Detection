@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import io
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from ..inference.detector import AnomalyDetector
@@ -37,16 +39,37 @@ def _category_dir(category: str) -> Path:
 
 
 def _available_categories() -> list[str]:
-    """Liệt kê category có đủ metadata và memory bank."""
+    """Liệt kê category có artifact đủ điều kiện để detector khởi động."""
     if not MODEL_DIR.exists():
         return []
-    return sorted(
-        path.name
-        for path in MODEL_DIR.iterdir()
-        if path.is_dir()
-        and not path.name.startswith((".", "_"))
-        and (path / "metadata.json").exists()
-        and (path / "memory_bank.npy").exists()
+    categories: list[str] = []
+    for path in sorted(MODEL_DIR.iterdir(), key=lambda item: item.name):
+        if not path.is_dir() or path.name.startswith((".", "_")):
+            continue
+        if not (path / "metadata.json").exists() or not (path / "memory_bank.npy").exists():
+            continue
+        try:
+            ModelArtifact.load(path)
+            memory_bank = np.load(path / "memory_bank.npy", mmap_mode="r", allow_pickle=False)
+            if (
+                memory_bank.ndim != 2
+                or memory_bank.shape[0] == 0
+                or memory_bank.shape[1] == 0
+                or not np.isfinite(memory_bank).all()
+            ):
+                continue
+        except (MemoryError, OSError, TypeError, ValueError):
+            continue
+        categories.append(path.name)
+    return categories
+
+
+@lru_cache(maxsize=16)
+def _get_detector(category: str) -> AnomalyDetector:
+    """Nạp một detector cho mỗi category và tái sử dụng giữa các request."""
+    return AnomalyDetector(
+        model_dir=_category_dir(category),
+        category=category,
     )
 
 
@@ -69,22 +92,31 @@ def _validate_and_load_image(raw_bytes: bytes) -> Image.Image:
         ) from exc
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Monitoring"])
-def health() -> HealthResponse:
-    """Kiểm tra process và sự có mặt của model artifact."""
+@app.get("/live", tags=["Monitoring"])
+def live() -> dict[str, str]:
+    """Kiểm tra process API còn hoạt động."""
+    return {"status": "ok"}
+
+
+@app.get("/ready", response_model=HealthResponse, tags=["Monitoring"])
+def ready() -> HealthResponse:
+    """Chỉ trả thành công khi có ít nhất một artifact model hợp lệ."""
     categories = _available_categories()
-    version = "not_trained"
-    if categories:
-        try:
-            version = ModelArtifact.load(MODEL_DIR / categories[0]).metadata.model_version
-        except (FileNotFoundError, ValueError):
-            version = "invalid_artifact"
+    if not categories:
+        raise HTTPException(status_code=503, detail="Không có model artifact hợp lệ.")
+    version = ModelArtifact.load(MODEL_DIR / categories[0]).metadata.model_version
     return HealthResponse(
-        status="ok" if categories else "degraded",
-        model_ready=bool(categories),
+        status="ok",
+        model_ready=True,
         model_version=version,
         categories=categories,
     )
+
+
+@app.get("/health", response_model=HealthResponse, include_in_schema=False, tags=["Monitoring"])
+def health() -> HealthResponse:
+    """Alias tương thích cho readiness check."""
+    return ready()
 
 
 @app.post("/inspect", response_model=InspectionResponse, tags=["Inspection"])
@@ -99,7 +131,7 @@ async def inspect(
     """Inspect một ảnh; category được truyền trực tiếp vào detector."""
     image = _validate_and_load_image(await file.read(MAX_UPLOAD_BYTES + 1))
     try:
-        detector = AnomalyDetector(model_dir=_category_dir(category))
+        detector = _get_detector(category.strip())
         result = detector.inspect(
             image,
             include_overlay=include_overlay,
@@ -134,7 +166,7 @@ async def inspect_batch(
         for file in files
     ]
     try:
-        detector = AnomalyDetector(model_dir=_category_dir(category))
+        detector = _get_detector(category.strip())
         results = detector.inspect_batch(
             images,
             include_overlay=include_overlay,

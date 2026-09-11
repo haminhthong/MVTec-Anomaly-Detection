@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
+import json
 import os
 import platform
 from pathlib import Path
@@ -54,7 +56,7 @@ def benchmark_category(
 
     pil_images = [Image.open(p).convert("RGB") for p in sample_images[:max(batch_sizes)]]
     if not pil_images:
-        raise ValueError(f"No sample images found for category '{category}'.")
+        raise ValueError(f"Không tìm thấy ảnh mẫu cho category '{category}'.")
 
     # Lặp lại mẫu nếu số lượng ảnh chưa đủ.
     while len(pil_images) < max(batch_sizes):
@@ -67,16 +69,16 @@ def benchmark_category(
     file_path = detector.model_dir / "memory_bank.npy"
     file_size_mb = file_path.stat().st_size / (1024 * 1024) if file_path.exists() else 0.0
 
-    print(f"Device               : {device.upper()}")
+    print(f"Thiết bị             : {device.upper()}")
     print(f"CPU                  : {cpu_name}")
     print(f"PyTorch              : {torch.__version__}")
     print(f"Torch threads        : {torch.get_num_threads()}")
     print(f"Image size           : {image_size[0]}x{image_size[1]}")
-    print(f"Memory Bank Shape    : [{bank_size_patches}, {bank_dim}]")
-    print(f"Memory Bank RAM      : {bank_ram_mb:.2f} MB")
-    print(f"Artifact File Size   : {file_size_mb:.2f} MB on disk")
-    print(f"Warmup iterations    : {num_warmup}")
-    print(f"Benchmark iterations : {num_runs}")
+    print(f"Kích thước memory bank: [{bank_size_patches}, {bank_dim}]")
+    print(f"Memory bank trong RAM : {bank_ram_mb:.2f} MB")
+    print(f"Dung lượng artifact   : {file_size_mb:.2f} MB trên đĩa")
+    print(f"Lượt khởi động        : {num_warmup}")
+    print(f"Lượt benchmark        : {num_runs}")
     print("-" * 70)
 
     # 1. Chạy lượt khởi động để loại ảnh hưởng của lần gọi đầu.
@@ -133,13 +135,15 @@ def benchmark_category(
 
     process = psutil.Process(os.getpid())
     process_memory_mb = process.memory_info().rss / (1024 * 1024)
-    print(f"\nProcess RSS Memory   : {process_memory_mb:.2f} MB")
+    print(f"\nRSS process           : {process_memory_mb:.2f} MB")
     print("=" * 70 + "\n")
 
     return {
         "category": category,
         "device": device,
+        "measured_at": datetime.now(timezone.utc).isoformat(),
         "runtime": {
+            "platform": platform.platform(),
             "cpu": cpu_name,
             "pytorch": torch.__version__,
             "torch_threads": torch.get_num_threads(),
@@ -165,13 +169,26 @@ def benchmark_category(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark AnomalyDetector inference latency and throughput")
-    parser.add_argument("--category", type=str, default="bottle", help="Product category")
-    parser.add_argument("--model-dir", type=str, default="models", help="Models directory")
-    parser.add_argument("--runs", type=int, default=25, help="Number of test iterations")
+    parser = argparse.ArgumentParser(description="Đo độ trễ và throughput của AnomalyDetector")
+    parser.add_argument("--category", type=str, default="bottle", help="Tên category sản phẩm")
+    parser.add_argument("--model-dir", type=str, default="models", help="Thư mục chứa model")
+    parser.add_argument("--runs", type=int, default=25, help="Số lượt đo")
+    parser.add_argument("--output", type=str, default=None, help="Đường dẫn JSON benchmark tùy chọn")
     args = parser.parse_args()
 
-    benchmark_category(category=args.category, model_dir=args.model_dir, num_runs=args.runs)
+    result = benchmark_category(
+        category=args.category,
+        model_dir=args.model_dir,
+        num_runs=args.runs,
+    )
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"Benchmark đã lưu tại: {output_path}")
 
 
 if __name__ == "__main__":

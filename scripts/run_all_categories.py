@@ -98,7 +98,7 @@ def aggregate_benchmark_csv(
         })
 
     if not rows:
-        print("No results to write to CSV.")
+        print("Không có kết quả để ghi vào CSV.")
         return
 
     # Tính dòng trung bình macro.
@@ -132,7 +132,7 @@ def aggregate_benchmark_csv(
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"\n[BENCHMARK] Saved aggregated metrics to '{out_path}'.")
+    print(f"\n[BENCHMARK] Đã lưu metric tổng hợp tại '{out_path}'.")
     print("category | samples | image_auroc | pixel_auroc | aupro@0.3 | false_pass_candidate")
     for row in rows:
         print(
@@ -142,12 +142,12 @@ def aggregate_benchmark_csv(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run pipeline on all available MVTec categories")
-    parser.add_argument("--categories", nargs="+", default=None, help="Specific categories to run")
-    parser.add_argument("--data-dir", default="data/raw", help="Path to raw datasets")
-    parser.add_argument("--models-dir", default="models", help="Path to models directory")
-    parser.add_argument("--output-csv", default="reports/benchmark.csv", help="Output benchmark CSV path")
-    parser.add_argument("--backbone", default="resnet18", help="Backbone CNN architecture")
+    parser = argparse.ArgumentParser(description="Chạy pipeline trên các category MVTec AD đã có")
+    parser.add_argument("--categories", nargs="+", default=None, help="Các category cần chạy cụ thể")
+    parser.add_argument("--data-dir", default="data/raw", help="Đường dẫn dataset raw")
+    parser.add_argument("--models-dir", default="models", help="Đường dẫn thư mục model")
+    parser.add_argument("--output-csv", default="reports/benchmark.csv", help="Đường dẫn CSV benchmark")
+    parser.add_argument("--backbone", default="resnet18", help="Kiến trúc backbone CNN")
     parser.add_argument("--overwrite-report", action="store_true", help="Cho phép ghi lại report đã tồn tại")
     args = parser.parse_args()
 
@@ -161,7 +161,7 @@ def main():
                 "Hãy tải dataset trước khi chạy multi-category pipeline."
             )
 
-    print(f"Categories to process: {target_categories}")
+    print(f"Các category sẽ xử lý: {target_categories}")
     all_metrics: list[dict[str, Any]] = []
     for cat in target_categories:
         try:
@@ -174,7 +174,7 @@ def main():
             )
             all_metrics.append(m)
         except Exception as exc:
-            print(f"[ERROR] Failed processing category '{cat}': {exc}")
+            print(f"[ERROR] Xử lý category '{cat}' thất bại: {exc}")
 
     if not all_metrics:
         raise RuntimeError("Không category nào hoàn thành pipeline; không ghi benchmark rỗng.")

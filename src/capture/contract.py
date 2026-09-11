@@ -20,7 +20,6 @@ class CaptureContract:
     min_exposure: float | None = None
     max_exposure: float | None = None
     roi: tuple[int, int, int, int] | None = None
-    orientation: str = "fixed"
 
     def to_dict(self) -> dict[str, Any]:
         """Chuyển điều kiện kiểm tra thành dữ liệu lưu trong metadata."""
@@ -41,5 +40,4 @@ class CaptureContract:
             min_exposure=values.get("min_exposure"),
             max_exposure=values.get("max_exposure"),
             roi=tuple(roi) if roi is not None else None,
-            orientation=str(values.get("orientation", "fixed")),
         )

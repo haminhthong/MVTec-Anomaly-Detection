@@ -35,7 +35,7 @@ def download_category(category: str, output_dir: Path) -> None:
     category = category.strip().lower()
     if category not in ALL_CATEGORIES:
         raise ValueError(f"Category không được hỗ trợ: {category!r}.")
-    print(f"Downloading MVTec AD category '{category}' into '{output_dir}'...")
+    print(f"Đang tải category MVTec AD '{category}' vào '{output_dir}'...")
     snapshot_download(
         repo_id=DATASET,
         repo_type="dataset",
@@ -51,22 +51,22 @@ def download_category(category: str, output_dir: Path) -> None:
         "archive_sha256": None,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Successfully downloaded '{category}'.")
+    print(f"Đã tải xong '{category}'.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download MVTec AD category datasets")
+    parser = argparse.ArgumentParser(description="Tải dataset category MVTec AD")
     parser.add_argument(
         "--category",
         type=str,
         default="bottle",
-        help="Category to download (e.g. 'bottle', 'cable', or 'all')",
+        help="Category cần tải, ví dụ 'bottle', 'cable' hoặc 'all'",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="data/raw",
-        help="Target raw data directory",
+        help="Thư mục lưu dữ liệu raw",
     )
     args = parser.parse_args()
 

@@ -7,12 +7,12 @@ Module lấy feature map trung gian từ backbone frozen, căn chỉnh về laye
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from torchvision.models.feature_extraction import create_feature_extractor
 
 from .backbone_registry import get_backbone_spec
 
@@ -48,7 +48,7 @@ class FeatureExtractor(nn.Module):
 
         # Khởi tạo backbone.
         if not hasattr(models, backbone):
-            raise ValueError(f"Backbone '{backbone}' is not supported by torchvision.models.")
+            raise ValueError(f"Backbone '{backbone}' không được torchvision.models hỗ trợ.")
 
         if not pretrained:
             resolved_weights = None
@@ -72,31 +72,27 @@ class FeatureExtractor(nn.Module):
             else:
                 resolved_weights = self.weights_name
 
-        self.model: nn.Module = getattr(models, backbone)(weights=resolved_weights)
+        backbone_model: nn.Module = getattr(models, backbone)(weights=resolved_weights)
 
-        # Đóng băng toàn bộ tham số.
-        self.eval()
-        for param in self.model.parameters():
+        # Đóng băng backbone vì project chỉ dùng nó để trích xuất feature.
+        backbone_model.eval()
+        for param in backbone_model.parameters():
             param.requires_grad = False
 
-        # Đăng ký forward hook trên các layer mục tiêu.
-        self._feature_maps: dict[str, torch.Tensor] = {}
-        self._hooks: list[Any] = []
-        named_modules = dict(self.model.named_modules())
-
+        # Chỉ trả về layer cần dùng, không chạy phần layer4/pool/fc dư thừa.
+        named_modules = dict(backbone_model.named_modules())
         for layer_name in self.layers:
             if layer_name not in named_modules:
                 raise ValueError(
-                    f"Layer '{layer_name}' not found in backbone '{backbone}'. "
-                    f"Available modules: {list(named_modules.keys())[:15]}..."
+                    f"Layer '{layer_name}' không có trong backbone '{backbone}'. "
+                    f"Các module hiện có: {list(named_modules.keys())[:15]}..."
                 )
-            hook = named_modules[layer_name].register_forward_hook(self._save_feature(layer_name))
-            self._hooks.append(hook)
 
-    def _save_feature(self, layer_name: str):
-        def hook_fn(module: nn.Module, input: Any, output: torch.Tensor) -> None:
-            self._feature_maps[layer_name] = output
-        return hook_fn
+        self.model = create_feature_extractor(
+            backbone_model,
+            return_nodes={layer_name: layer_name for layer_name in self.layers},
+        )
+        self.eval()
 
     @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -125,11 +121,9 @@ class FeatureExtractor(nn.Module):
                 - patches: Tensor embedding patch [B * H_map * W_map, C_total].
                 - (h_map, w_map): Độ phân giải lưới patch sau khi căn chỉnh.
         """
-        self._feature_maps.clear()
-        _ = self.model(x)
-
-        extracted_maps = [self._feature_maps[layer_name] for layer_name in self.layers]
-        target_shape = extracted_maps[0].shape[2:]  # (H, W) of the first feature layer
+        outputs = self.model(x)
+        extracted_maps = [outputs[layer_name] for layer_name in self.layers]
+        target_shape = extracted_maps[0].shape[2:]  # (H, W) của layer đầu tiên.
 
         # Nội suy song tuyến để căn chỉnh kích thước không gian.
         aligned_maps: list[torch.Tensor] = []

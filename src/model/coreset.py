@@ -11,7 +11,7 @@ Selected Indices [K]
     ↓
 Slice original D-dimensional features (e.g. 384D)
     ↓
-Final Memory Bank [K, D]
+Memory Bank cuối [K, D]
 
 Phép chiếu ngẫu nhiên 64D chỉ dùng để tăng tốc chọn coreset; toàn bộ truy vấn
 1-NN sau đó vẫn hoạt động trên vector D chiều gốc.

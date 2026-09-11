@@ -1,8 +1,8 @@
 # Kiến trúc
 
 Repo tập trung vào một sản phẩm CV duy nhất: PatchCore-style visual anomaly
-detection trên MVTec AD. FastAPI, SQLite và Docker chỉ hỗ trợ demo và vận hành
-local; chúng không thay thế pipeline anomaly detection.
+detection trên MVTec AD. FastAPI và Docker chỉ hỗ trợ demo và vận hành local;
+chúng không thay thế pipeline anomaly detection.
 
 ## Pipeline chính
 
@@ -41,8 +41,14 @@ so với memory bank bằng 1-NN, reshape thành heatmap, Gaussian smoothing r�
 tính image score. Score dưới image threshold là `PASS_CANDIDATE`, còn lại là
 `REVIEW_REQUIRED`.
 
-Detector không tự cập nhật memory bank. Kết quả QC nếu được lưu chỉ là feedback
-độc lập cho người dùng.
+Detector không tự cập nhật memory bank. Kết quả QC nằm ngoài detector và không
+được dùng để tự động retrain hay mở rộng reference set.
+
+## Serving
+
+- `/live` chỉ kiểm tra process có đang chạy.
+- `/ready` kiểm tra metadata và memory bank của ít nhất một category.
+- `/inspect` và `/inspect/batch` dùng detector đã cache theo category sau lần gọi đầu.
 
 ## Evaluation
 

@@ -42,4 +42,6 @@ image
 ```
 
 `image_threshold` và `pixel_threshold` được lưu trong `metadata.json`. Quantile
-P99 chỉ là heuristic upper-tail từ normal Calibration.
+P99 chỉ là heuristic upper-tail từ normal Calibration. API kiểm tra `/live` cho
+process-level liveness và `/ready` cho model readiness; detector theo category
+được cache sau lần khởi tạo đầu tiên.

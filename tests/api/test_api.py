@@ -46,9 +46,11 @@ def setup_api_model(tmp_path_factory: pytest.TempPathFactory):
 
     original_model_dir = app_module.MODEL_DIR
     app_module.MODEL_DIR = models_dir
+    app_module._get_detector.cache_clear()
 
     yield category
 
+    app_module._get_detector.cache_clear()
     app_module.MODEL_DIR = original_model_dir
 
 
@@ -62,6 +64,27 @@ def test_health_endpoint(setup_api_model: str) -> None:
     assert data["status"] == "ok"
     assert data["model_ready"] is True
     assert setup_api_model in data["categories"]
+
+
+def test_live_and_ready_endpoints(setup_api_model: str) -> None:
+    """Liveness không phụ thuộc model; readiness phải thấy model hợp lệ."""
+    client = TestClient(app_module.app)
+
+    assert client.get("/live").status_code == 200
+    assert client.get("/ready").status_code == 200
+
+
+def test_ready_without_model_returns_503(tmp_path: Path) -> None:
+    """Readiness không được trả xanh khi chưa có artifact model."""
+    original_model_dir = app_module.MODEL_DIR
+    app_module.MODEL_DIR = tmp_path / "empty-models"
+    app_module._get_detector.cache_clear()
+    try:
+        response = TestClient(app_module.app).get("/ready")
+        assert response.status_code == 503
+    finally:
+        app_module.MODEL_DIR = original_model_dir
+        app_module._get_detector.cache_clear()
 
 
 def test_inspect_single_image(setup_api_model: str) -> None:
