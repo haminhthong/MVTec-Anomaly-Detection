@@ -54,4 +54,6 @@ def compute_aupro(masks: np.ndarray, maps: np.ndarray, max_fpr: float = 0.3) -> 
         x = np.append(x, max_fpr)
         y = np.append(y, y[-1])
 
-    return float(np.trapezoid(y, x) / max_fpr)
+    # ``trapezoid`` chỉ có ở NumPy mới; ``trapz`` giúp chạy được với môi trường CI cũ hơn.
+    area = np.trapezoid(y, x) if hasattr(np, "trapezoid") else np.trapz(y, x)
+    return float(area / max_fpr)
