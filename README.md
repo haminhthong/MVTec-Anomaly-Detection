@@ -33,7 +33,7 @@ flowchart TD
     E --> F["Greedy k-center coreset"]
     F --> G["Memory bank"]
     G --> H["Normal-only threshold calibration"]
-    H --> I["models/category/metadata.json"]
+    H --> I["models/<category>/memory_bank.npy + metadata.json"]
 
     J["New image"] --> K{"Input image check"}
     K -- "Invalid" --> L["RECAPTURE_REQUIRED"]
@@ -86,7 +86,7 @@ Một sample gồm Input, Ground Truth, Anomaly Map và Overlay:
 
 | Good sample | Defect sample |
 | --- | --- |
-| ![Good inspection](/reports/sample_outputs/inspection_good_sample.png) | ![Defect inspection](/reports/sample_outputs/inspection_defect_sample.png) |
+| ![Good inspection](reports/sample_outputs/inspection_good_sample.png) | ![Defect inspection](reports/sample_outputs/inspection_defect_sample.png) |
 
 Tạo lại sau khi có data và model:
 
